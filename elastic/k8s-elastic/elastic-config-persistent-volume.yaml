@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: elastic-config-file
+  namespace: elastic
+  labels:
+    type: local
+spec:
+  storageClassName: elastic-config
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/run/desktop/mnt/host/d/devroot/trace/elastic/config/elasticsearch.yml"

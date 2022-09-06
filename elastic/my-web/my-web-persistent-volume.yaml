@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: PersistentVolume
+metadata:
+  name: web-volume
+  namespace: my-web
+  labels:
+    type: local
+spec:
+  storageClassName: web
+  capacity:
+    storage: 1Gi
+  accessModes:
+    - ReadWriteOnce
+  hostPath:
+    path: "/run/desktop/mnt/host/d/devroot/trace/elastic/html"

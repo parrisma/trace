@@ -1,0 +1,29 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: my-web-deployment
+  namespace: my-web
+  labels:
+    app: my-web
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: my-web
+  template:
+    metadata:
+      labels:
+        app: my-web
+    spec:
+      volumes:
+        - name: web-volume
+          persistentVolumeClaim:
+            claimName: web-pv-claim
+      containers:
+        - name: my-web-1-0
+          image: nginx
+          ports:
+            - containerPort: 80
+          volumeMounts:
+            - name: web-volume
+              mountPath: "/usr/share/nginx/html"
