@@ -77,56 +77,6 @@ class TestAITrace(unittest.TestCase):
                          chr(34) + chr(32) + chr(39) + chr(32) + chr(92))  # should be un encoded as parsed
         return
 
-    def test_json_insert_args(self):
-        str_to_insert_into = "0=<arg0> 2=<arg2> 1=<arg1> 10=<arg10> 2=<arg2><arg2> 20=<arg20>"
-        actual = ESUtil.json_insert_args(str_to_insert_into,
-                                         arg10="10",
-                                         argument0="ShouldIgnoreMe",
-                                         arg2="2",
-                                         arg0="0",
-                                         arg1="1",
-                                         ar0="ShouldIgnoreMe")
-        self.assertEqual("0=0 2=2 1=1 10=10 2=22 20=<arg20>", actual)
-        return
-
-    def test_notification_formatter(self):
-        nf = NotificationFormatter()
-        actual = nf.format(notification_type_uuid="123",
-                           work_ref_uuid="234",
-                           session_uuid="345",
-                           sink_uuid="456",
-                           src_uuid="567",
-                           timestamp=datetime(year=2000, month=6, day=20,
-                                              hour=18, minute=37, second=51, microsecond=67))
-        self.assertEqual(
-            '{"notification_type_uuid":"123","work_ref_uuid":"234","session_uuid":"345","sink_uuid":"456","src_uuid":"567","timestamp":"2000-06-20T18:37:51.000067+0000"}'
-            , actual)
-        return
-
-    def test_notification_log_write_to_elastic(self):
-        """
-        Write 100 random notification log events to elastic
-        """
-        tr: TraceReport
-        tr = Env.get_context()[EnvBuilder.TraceReport]
-
-        try:
-            _num_to_create = 100
-            session_uuid = UniqueRef().ref  # session uuid remains fixed.
-            for i in range(_num_to_create):
-                tr.log_notification(notification_type_uuid=UniqueRef().ref,
-                                    work_ref_uuid=UniqueRef().ref,
-                                    session_uuid=session_uuid,
-                                    sink_uuid=UniqueRef().ref,
-                                    src_uuid=UniqueRef().ref)
-                self._trace.log().debug(
-                    "Written random notification log number {} for session {}".format(i, session_uuid))
-            time.sleep(1)
-            self.assertEqual(_num_to_create, self._num_docs_in_notification_log_session(session_uuid=session_uuid))
-        except Exception as e:
-            self.assertFalse("Unexpected Exception while testing notification logging")
-        return
-
     def test_trace_log_write_to_elastic(self):
         """
         Write 100 records to Trace, which is elastic enabled and check that 100 matching records appear in

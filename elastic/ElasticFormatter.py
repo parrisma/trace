@@ -1,58 +1,39 @@
 from logging import Formatter, LogRecord
-from typing import Dict, List
+from typing import Dict, Any
 from ESUtil import ESUtil
 import json
 
 
 class ElasticFormatter(Formatter):
+    json_log_fields = ["session_uuid", "level", "timestamp", "message"]
 
-    _jflds = ["session_uuid", "level", "timestamp", "message"]
-    # Allow cross platform consistency of logging levels
-    _level_map = {50: "CRITICAL",
-                  40: "ERROR",
-                  30: "WARNING",
-                  20: "INFO",
-                  10: "DEBUG",
-                  0: "NOTSET"
-                  }
+    # Allow cross-platform consistency of logging levels
+    level_map = {50: "CRITICAL",
+                 40: "ERROR",
+                 30: "WARNING",
+                 20: "INFO",
+                 10: "DEBUG",
+                 0: "NOTSET"
+                 }
 
-    def __init__(self,
-                 level_map: Dict = None,
-                 json_field_names: List = None,
-                 date_formatter: ESUtil.ElasticDateFormatter = None):
+    def __init__(self):
         """
         Boostrap Elastic Log Formatter
-        :param level_map: Dictionary of log level numbers to string equivalent : None => use str(level_no)
-        :param json_field_names: Names of 4 json fields in order [session_uuid, type_uuid, timestamp, message].
-                                 None implies use the field names as show in this description
-        :param date_formatter: Takes a datetime and return as string - if None fmt = %Y-%m-%dT%H:%M:%S.%f%.yaml
         """
         super(ElasticFormatter, self).__init__()
 
-        if json_field_names is None or len(json_field_names) == 0:
-            self._json_fields = self._jflds
-        else:
-            self._json_fields = json_field_names
-
+        self._json_fields = ElasticFormatter.json_log_fields
         self._fmt = '{{{{"{}":"{{}}","{}":"{{}}","{}":"{{}}","{}":"{{}}"}}}}'.format(self._json_fields[0],
                                                                                      self._json_fields[1],
                                                                                      self._json_fields[2],
                                                                                      self._json_fields[3])
-
-        if date_formatter is None:
-            self._date_formatter = ESUtil.DefaultElasticDateFormatter()
-        else:
-            self._date_formatter = date_formatter
-
-        if level_map is None or len(level_map) == 0:
-            self._level_map = self.default_level_map()
-        else:
-            self._level_map = level_map
+        self._date_formatter = ESUtil.DefaultElasticDateFormatter()
+        self._level_map = ElasticFormatter.level_map
         return
 
     @staticmethod
     def default_level_map() -> Dict:
-        return ElasticFormatter._level_map
+        return ElasticFormatter.level_map
 
     def _translate_level_no(self,
                             level_no: int) -> str:

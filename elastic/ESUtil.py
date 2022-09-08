@@ -60,7 +60,7 @@ class ESUtil:
             :param dt: The data to format
             :return: time stamp that is timezone aware as string
             """
-            return dt.strftime('%Y-%m-%dT%H:%M:%S.%f%.yaml')
+            return dt.strftime('%Y-%m-%dT%H:%M:%S.%f%z')
 
     @classmethod
     def get_connection(cls,
@@ -154,23 +154,19 @@ class ESUtil:
     def delete_documents(es: Elasticsearch,
                          idx_name: str,
                          json_query: Dict[str, Any],
-                         **kwargs) -> None:
+                         wait_for_delete_to_complete: bool = False) -> None:
         """
         Delete all documents on the givenindex that match the parameterised query
         :param es: An open elastic search connection
         :param idx_name: The name of the index to execute delete on
         :param json_query: The Json query to delete by
-        :param kwargs: arguments to the json_query of the form arg0='value 0', arg1='value 1' .. argn='value n'
-                       where the argument values will be substituted into the json query before it is executed.
-                       The raw query { x: { y: <arg0> } } will have <arg0> fully replaced with the corresponding
-                       kwargs value supplied for all arg0..argn. Where there are multiple occurrences of any <argn>
-                       all occurrences will be replaced.
+        :param wait_for_delete_to_complete: If true, wait for the delete operation to complete before returning
         """
         try:
             # Exception will indicate delete error.
             es.delete_by_query(index=idx_name,
                                query=json_query,
-                               refresh=True)
+                               refresh=wait_for_delete_to_complete)
         except Exception as e:
             print(e.msg)
             raise RuntimeError(
@@ -180,18 +176,12 @@ class ESUtil:
     @staticmethod
     def run_search(es: Elasticsearch,
                    idx_name: str,
-                   json_query: Dict[str, Any],
-                   **kwargs) -> List[Dict]:
+                   json_query: Dict[str, Any]) -> List[Dict]:
         """
         Execute a search with a scroll context to recover entire result set even if > 10K documents
         :param es: An open elastic search connection
         :param idx_name: The name of the index to execute search on
         :param json_query: The Json query to run
-        :param kwargs: arguments to the json_query of the form arg0='value 0', arg1='value 1' .. argn='value n'
-                       where the argument values will be substituted into the json query before it is executed.
-                       The raw query { x: { y: <arg0> } } will have <arg0> fully replaced with the corresponding
-                       kwargs value supplied for all arg0..argn. Where there are multiple occurrences of any <argn>
-                       all occurrences will be replaced.
         :return: A list of the resulting documents
         """
         try:
@@ -218,22 +208,15 @@ class ESUtil:
     @staticmethod
     def run_count(es: Elasticsearch,
                   idx_name: str,
-                  json_query: Dict[str, Any],
-                  **kwargs) -> int:
+                  json_query: Dict[str, Any]) -> int:
         """
         Get the number of records that match the query on the given index
         :param es: An open elastic search connection
         :param idx_name: The name of the index to execute count on
         :param json_query: The Json query to run
-        :param kwargs: arguments to the json_query of the form arg0='value 0', arg1='value 1' .. argn='value n'
-                       where the argument values will be substituted into the json query before it is executed.
-                       The raw query { x: { y: <arg0> } } will have <arg0> fully replaced with the corresponding
-                       kwargs value supplied for all arg0..argn. Where there are multiple occurrences of any <argn>
-                       all occurrences will be replaced.
         :return: The number of matching documents
         """
         try:
-            # json_query_to_execute = ESUtil.json_insert_args(json_source=json_query, **kwargs)
             # Exception will indicate search error.
             res = es.count(index=idx_name,
                            query=json_query)
@@ -245,18 +228,20 @@ class ESUtil:
     @staticmethod
     def write_doc_to_index(es: Elasticsearch,
                            idx_name: str,
-                           document_as_json: str,
+                           document_as_json_map: Union[str, Dict[str, Any]],
                            wait_for_write_to_complete: bool = False) -> None:
         """
         Apply the associated formatter to the given LogRecord and persist it to Elastic
         :param es: An open elastic search connection
         :param idx_name: The name of the index to add the document to
-        :param document_as_json: The document (as json) to add to the index
+        :param document_as_json_map: The document (as json) to add to the index, either as Dict or JSON string
         :param wait_for_write_to_complete: If true block on write until the write is complete
         """
         try:
+            if isinstance(document_as_json_map, str):
+                document_as_json_map = json.loads(document_as_json_map)
             res = es.index(index=idx_name,
-                           document=document_as_json,
+                           document=document_as_json_map,
                            refresh=wait_for_write_to_complete)
             if res.get('result', None) != 'created':
                 raise RuntimeError(
@@ -293,32 +278,22 @@ class ESUtil:
     def run_search_agg(es: Elasticsearch,
                        idx_name: str,
                        json_query: str,
-                       **kwargs) -> List[List]:
+                       agg_name: str) -> List[List]:
         """
         Execute a search for an aggregation.
         Note: This has a size of zero set to pull back just the aggregation results.
         :param es: An open elastic search connection
         :param idx_name: The name of the index to execute search aggregation on
         :param json_query: The Json query to run
-        :param kwargs: arguments to the json_query of the form arg0='value 0', arg1='value 1' .. argn='value n'
-                       where the argument values will be substituted into the json query before it is executed.
-                       The raw query { x: { y: <arg0> } } will have <arg0> fully replaced with the corresponding
-                       kwargs value supplied for all arg0..argn. Where there are multiple occurrences of any <argn>
-                       all occurrences will be replaced.
+        :param agg_name: The name pf teh field to aggregate by
         :return: A list of aggregation keywords and associated counts.
         """
         try:
             search_res = list()
-            if 'arg0' not in kwargs:
-                raise RuntimeError(
-                    "Aggregation search requires aggregation_name in query to be supplied in kwargs as arg0")
-            else:
-                agg_name = kwargs['arg0']
-            json_query_to_execute = ESUtil.json_insert_args(json_source=json_query, **kwargs)
             # Exception will indicate search error.
             search_res = list()
             res = es.search(index=idx_name,
-                            body=json_query_to_execute,
+                            body=json_query,
                             size=0)
             for agg in res['aggregations'][agg_name]['buckets']:
                 search_res.append([agg['key'], agg['doc_count']])

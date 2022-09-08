@@ -1,5 +1,7 @@
 from logging import Handler, LogRecord
 from elasticsearch import Elasticsearch
+from elastic.ESUtil import ESUtil
+from elastic.ElasticFormatter import ElasticFormatter
 
 
 class ElasticHandler(Handler):
@@ -16,6 +18,7 @@ class ElasticHandler(Handler):
         Handler.__init__(self)
         self._es = es
         self._es_index = trace_log_index_name
+        self.setFormatter(ElasticFormatter())
         return
 
     def emit(self,
@@ -26,10 +29,9 @@ class ElasticHandler(Handler):
         """
         msg = self.formatter.format(record=record)
         try:
-            res = self._es.index(index=self._es_index,
-                                 body=msg)
-            if res.get('result', None) != 'created':
-                raise RuntimeError("Bad Elastic return status [{}]".format(str(res)))
+            ESUtil.write_doc_to_index(es=self._es,
+                                      idx_name=self._es_index,
+                                      document_as_json_map=msg)
         except Exception as e:
             raise RuntimeError("Failed to write log to Elastic with exception [{}]".format(str(e)))
         return

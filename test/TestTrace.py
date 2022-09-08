@@ -1,7 +1,5 @@
-import io
 import unittest
 import numpy as np
-from IPython.utils.capture import capture_output
 from UtilsForTesting import UtilsForTesting
 from rltrace.Trace import Trace
 from rltrace.Trace import LogLevel

@@ -1,13 +1,15 @@
-import io
-import time
-from datetime import datetime, timezone
+import logging
+from time import sleep
+from typing import Dict, Any, Tuple
+from datetime import datetime
+from logging import LogRecord
 import unittest
-import numpy as np
 import json
-from IPython.utils.capture import capture_output
+from Trace import Trace
+from Trace import LogLevel
+from elastic.ElasticFormatter import ElasticFormatter
+from elastic.ElasticHandler import ElasticHandler
 from UtilsForTesting import UtilsForTesting
-from rltrace.Trace import Trace
-from rltrace.Trace import LogLevel
 from rltrace.UniqueRef import UniqueRef
 from elastic.ESUtil import ESUtil
 from gibberish import Gibberish
@@ -55,10 +57,29 @@ class TestElasticTrace(unittest.TestCase):
         return
 
     @staticmethod
-    def _generate_test_document(session_uuid: str) -> str:
+    def _generate_test_document(session_uuid: str) -> Dict[str, Any]:
         msg = Gibberish.more_gibber()
         tstamp = ESUtil.datetime_in_elastic_time_format(datetime.now())
-        return f'{{"session_uuid":"{session_uuid}","level":"DEBUG","timestamp":"{tstamp}","message":"{msg}"}}'
+        return json.loads(
+            f'{{"session_uuid":"{session_uuid}","level":"DEBUG","timestamp":"{tstamp}","message":"{msg}"}}')
+
+    @staticmethod
+    def _create_log_record() -> Tuple[LogRecord, str, str, str, str]:
+        lr_time = datetime.now()
+        lr_level = logging.INFO
+        lr_msg = Gibberish.more_gibber()
+        lr_name = UniqueRef().ref
+        log_record = LogRecord(name=lr_name,
+                               level=lr_level,
+                               pathname='',
+                               lineno=0,
+                               msg=lr_msg,
+                               args=None,
+                               exc_info=None)
+        log_record.created = lr_time
+        lr_level = ElasticFormatter.level_map[lr_level]
+        lr_time = ESUtil.datetime_in_elastic_time_format(lr_time)
+        return (log_record, lr_name, lr_level, lr_time, lr_msg)  # NOQA
 
     @UtilsForTesting.test_case
     def testA1IndexCreateDelete(self):
@@ -118,7 +139,7 @@ class TestElasticTrace(unittest.TestCase):
             doc = TestElasticTrace._generate_test_document(session_uuid)
             ESUtil.write_doc_to_index(es=self._es_connection,
                                       idx_name=self._index_name,
-                                      document_as_json=doc,
+                                      document_as_json_map=doc,
                                       wait_for_write_to_complete=True)
 
             res = ESUtil.run_count(es=self._es_connection,
@@ -133,9 +154,10 @@ class TestElasticTrace(unittest.TestCase):
     def testA5DeleteDocument(self):
         try:
             session_uuid = UniqueRef().ref
+            doc = TestElasticTrace._generate_test_document(session_uuid)
             ESUtil.write_doc_to_index(es=self._es_connection,
                                       idx_name=self._index_name,
-                                      document_as_json=f'{{"session_uuid":"{session_uuid}","level":"DEBUG","timestamp":"2000-06-20T18:37:51.000067+0000","message":"\\" \' \\\\"}}',
+                                      document_as_json_map=doc,
                                       wait_for_write_to_complete=True)
 
             res = ESUtil.run_count(es=self._es_connection,
@@ -145,7 +167,8 @@ class TestElasticTrace(unittest.TestCase):
 
             ESUtil.delete_documents(es=self._es_connection,
                                     idx_name=self._index_name,
-                                    json_query={"match": {"session_uuid": session_uuid}})
+                                    json_query={"match": {"session_uuid": session_uuid}},
+                                    wait_for_delete_to_complete=True)
 
             res = ESUtil.run_count(es=self._es_connection,
                                    idx_name=self._index_name,
@@ -154,6 +177,113 @@ class TestElasticTrace(unittest.TestCase):
 
         except Exception as e:
             self.fail(f'Unexpected exception {str(e)}')
+        return
+
+    @UtilsForTesting.test_case
+    def testA6ElasticFormatter(self):
+        try:
+            elastic_formatter = ElasticFormatter()
+            log_record, lr_name, lr_level, lr_time, lr_msg = self._create_log_record()
+            elastic_log_record = elastic_formatter.format(log_record)
+            elastic_log_record = json.loads(elastic_log_record)
+            self.assertTrue(elastic_log_record[ElasticFormatter.json_log_fields[0]] == lr_name)
+            self.assertTrue(elastic_log_record[ElasticFormatter.json_log_fields[1]] == lr_level)
+            self.assertTrue(elastic_log_record[ElasticFormatter.json_log_fields[2]] == lr_time)
+            self.assertTrue(elastic_log_record[ElasticFormatter.json_log_fields[3]] == lr_msg)
+        except Exception as e:
+            self.fail(f'Unexpected exception {str(e)}')
+        return
+
+    @UtilsForTesting.test_case
+    def testA7ElasticLogging(self):
+        handler_index_name = f'index_handler_{UniqueRef().ref}'
+        try:
+            res = ESUtil.create_index_from_json(es=self._es_connection,
+                                                idx_name=handler_index_name,
+                                                mappings_as_json=self._index_mappings)
+            if not res:
+                raise Exception(f'failed to create index {handler_index_name} for testing elastic logging')
+
+            elastic_handler = ElasticHandler(es=self._es_connection,
+                                             trace_log_index_name=handler_index_name)
+
+            log_record, lr_name, lr_level, lr_time, lr_msg = self._create_log_record()
+            elastic_handler.emit(log_record)
+            sleep(1)  # log write does not block on write so give time for record to flush before reading it back
+            res = ESUtil.run_search(es=self._es_connection,
+                                    idx_name=handler_index_name,
+                                    json_query={"match": {"session_uuid": f'\"{lr_name}\"'}})
+            self.assertTrue(len(res) == 1)
+            actual = res[0]["_source"]
+            self.assertTrue(actual[ElasticFormatter.json_log_fields[0]] == lr_name)
+            self.assertTrue(actual[ElasticFormatter.json_log_fields[1]] == lr_level)
+            self.assertTrue(actual[ElasticFormatter.json_log_fields[2]] == lr_time)
+            self.assertTrue(actual[ElasticFormatter.json_log_fields[3]] == lr_msg)
+        except Exception as e:
+            self.fail(f'Unexpected exception {str(e)}')
+        finally:
+            if ESUtil.index_exists(es=self._es_connection,
+                                   idx_name=handler_index_name):
+                res = ESUtil.delete_index(es=self._es_connection,
+                                          idx_name=handler_index_name)
+                if not res:
+                    raise Exception(f'failed to delete index {handler_index_name} while testing elastic logging')
+
+        return
+
+    @UtilsForTesting.test_case
+    def testA8ElasticLoggingViaTrace(self):
+        handler_index_name = f'index_handler_{UniqueRef().ref}'
+        session_uuid = UniqueRef().ref
+        try:
+            res = ESUtil.create_index_from_json(es=self._es_connection,
+                                                idx_name=handler_index_name,
+                                                mappings_as_json=self._index_mappings)
+            if not res:
+                raise Exception(f'failed to create index {handler_index_name} for testing elastic logging')
+
+            elastic_handler = ElasticHandler(es=self._es_connection,
+                                             trace_log_index_name=handler_index_name)
+
+            # Create trace logger and attach elastic handler.
+            trace: Trace = Trace(log_level=LogLevel.debug)
+            trace.enable_handler(elastic_handler)
+
+            # Check no logging entries.
+            res = ESUtil.run_count(es=self._es_connection,
+                                   idx_name=handler_index_name,
+                                   json_query={"match_all": {}})
+            self.assertTrue(res == 0)
+
+            # Create dummy log message
+            lr_msg = Gibberish.more_gibber()
+
+            trace().debug(lr_msg)
+            sleep(1)  # log write does not block on write so give time for record to flush before reading it back
+
+            # Check there is one logging entries.
+            res = ESUtil.run_count(es=self._es_connection,
+                                   idx_name=handler_index_name,
+                                   json_query={"match_all": {}})
+            self.assertTrue(res == 1)
+
+            # check the message matches
+            res = ESUtil.run_search(es=self._es_connection,
+                                    idx_name=handler_index_name,
+                                    json_query={"match_all": {}})
+            actual = res[0]["_source"]
+            self.assertTrue(actual[ElasticFormatter.json_log_fields[3]] == lr_msg)
+
+        except Exception as e:
+            self.fail(f'Unexpected exception {str(e)}')
+        finally:
+            if ESUtil.index_exists(es=self._es_connection,
+                                   idx_name=handler_index_name):
+                res = ESUtil.delete_index(es=self._es_connection,
+                                          idx_name=handler_index_name)
+                if not res:
+                    raise Exception(f'failed to delete index {handler_index_name} while testing elastic logging')
+
         return
 
     @UtilsForTesting.test_case

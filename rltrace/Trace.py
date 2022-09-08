@@ -11,8 +11,9 @@ class Trace:
     _console_handler: logging.Handler
     _session_uuid: str
 
+    # %f - milliseconds not supported on Windows for 'time' module
     _CONSOLE_FORMATTER = logging.Formatter("%(asctime)s — %(name)s - %(levelname)s — %(message)s",
-                                           datefmt='%Y-%m-%dT%H:%M:%S%.yaml')
+                                           datefmt='%Y-%m-%dT%H:%M:%S.%z')
 
     class StreamToLogger(object):
         """
@@ -80,19 +81,21 @@ class Trace:
             self._logger.addHandler(self._console_handler)
         return
 
-    # def enable_elastic_handler(self,
-    #                          elastic_handler: ElasticHandler) -> None:
-    # """
-    # Create the elastic handler and add it as a handler to the current logger
-    # Note: elastic_handler contains the open connection to Elastic DB
-    # """
-    # if self._elastic_handler is None:
-    #    self._elastic_handler = elastic_handler
-    #    self._elastic_handler.name = "{}-ElasticHandler".format(self._logger.name)
-    #    self._elastic_handler.setLevel(level=self._logger.level)
-    #    self._elastic_handler.setFormatter(Trace._ELASTIC_FORMATTER)
-    #    self._logger.addHandler(self._elastic_handler)
-    #  return
+    def enable_handler(self,
+                       handler: logging.Handler) -> None:
+        """
+        Attach the handler as an additional sink.
+        :param handler: The log handler to attach
+        """
+        if handler is None:
+            raise ValueError("Given handler to enable is None")
+        if not isinstance(handler, logging.Handler):
+            raise ValueError(f'Expected handler but given {handler.__class__.name}')
+
+        handler.setLevel(level=self._logger.level)
+        self._logger.addHandler(handler)
+
+        return
 
     def enable_tf_capture(self,
                           tf_logger: logging.Logger) -> None:
