@@ -1,5 +1,5 @@
 from logging import Formatter, LogRecord
-from typing import Dict, Any
+from typing import Dict
 from ESUtil import ESUtil
 import json
 

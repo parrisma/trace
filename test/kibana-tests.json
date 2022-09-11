@@ -1,0 +1,88 @@
+
+GET ${exampleVariable1}
+{
+  "query": {
+    "${exampleVariable2}": {}
+  }
+}
+
+PUT /my-index-000001
+{
+  "settings": {
+    "index": {
+      "number_of_shards": 1,
+      "number_of_replicas": 1
+    }
+  },
+  "mappings": {
+    "properties": {
+      "session_uuid": {
+        "type": "text"
+      },
+      "level": {
+        "type": "text"
+      },
+      "timestamp": {
+        "type": "date",
+        "format": "yyyy-MM-dd'T'HH:mm:ss.SSSSSSZ"
+      },
+      "message": {
+        "type": "text"
+      }
+    }
+  }
+}
+
+DELETE index_handler_c3ec8ad4797741a1a7392a38ba303e7a
+
+GET /_cat/indices
+
+GET index-3f7a2fe057c34c0781cf9df23be40126/_search
+{
+    "query": {
+        "match": {
+          "session_uuid": "7bc2f6336da740e08f19ba62ce4fa902"
+        }
+    }
+}
+
+POST index-3f7a2fe057c34c0781cf9df23be40126/_delete_by_query
+{
+  "query": {
+    "match": {
+      "session_uuid": "7bc2f6336da740e08f19ba62ce4fa902"
+    }
+  }
+}
+
+GET index-34cfbe54d56949e09278d0c6cde40dfa/_search
+{"query": {"match": {"session_uuid": "df757d98f20a4a0982ecf2306838c6ac"}}}
+
+POST index-34cfbe54d56949e09278d0c6cde40dfa/_delete_by_query
+{"query": {"match": {"session_uuid": "0f13f01adfae406bacc4785be6018606"}}}
+
+GET index_handler_933b67022b314afaac57792be69397c9/_search
+{
+    "query" : {
+        "match_all": {
+        }
+    }
+}
+
+POST index_handler_077377ed498341cc87cba6fd8c4a8f25/_search
+{
+  "query": {
+    "match": {
+      "session_uuid": "6c23f6f76a1e404fa3f17dc6e0daa305"
+    }
+  }
+}
+POST index_handler_b844a014812246f88137353baf548995/_search
+{
+  "query": {
+    "match": {
+      "session_uuid": "74eae198097e4d5ea2e83d85a6122d26"
+    }
+  }
+}
+

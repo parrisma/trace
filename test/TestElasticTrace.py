@@ -1,4 +1,6 @@
 import logging
+import subprocess
+from kubernetes import client, config
 from time import sleep
 from typing import Dict, Any, Tuple
 from datetime import datetime
@@ -21,12 +23,18 @@ unittest.TestLoader.sortTestMethodsUsing = lambda self, a, b: (a > b) - (a < b)
 class TestElasticTrace(unittest.TestCase):
     _run: int
     _es_connection = None
-    _index_name = f'index-{UniqueRef().ref}'
+    _node_port: int = None
+    _loaded: bool = False
+    _index_name: str = f'index-{UniqueRef().ref}'
     _index_mapping_file: str = '..\\elastic\\k8s-elastic\\elastic-log-index.json'
     _index_mappings: str = None
 
     def __init__(self, *args, **kwargs):
         super(TestElasticTrace, self).__init__(*args, **kwargs)
+        # Read in local config for Kube install.
+        if not self._loaded:
+            config.load_kube_config()
+            self._loaded = True
         return
 
     @classmethod
@@ -34,20 +42,49 @@ class TestElasticTrace(unittest.TestCase):
         cls._run = 0
         return
 
+    @classmethod
+    def getElasticK8NodePortNumber(cls,
+                                   namespace='elastic',
+                                   service_name='elastic-service') -> int:
+        """
+        Use kubectl to get the details of the elastic service and this teh node port assigned to elastic.
+        This assumes the elastic-search service is deployed and running with the deployment as defined
+        in the ./k8s-elastic dir.
+        :param namespace: The Kubernetes namespace in which the service is defined
+        :param service_name: The name of the service
+        """
+        node_port: int = None
+        v1 = client.CoreV1Api()
+        ret = v1.list_namespaced_service(namespace=namespace, watch=False)
+        for svc in ret.items:
+            if svc.metadata.name == service_name:
+                for port in svc.spec.ports:
+                    if port.port == 9200:
+                        node_port = svc.spec.ports[0].node_port
+                        break
+        v1.api_client.rest_client.pool_manager.clear()
+        v1.api_client.close()
+        return node_port
+
     def setUp(self) -> None:
         TestElasticTrace._run += 1
         print(f'- - - - - - C A S E {TestElasticTrace._run} Start - - - - - -')
         try:
+            # Get the elastic hostport id.
+            if self._node_port is None:
+                port_id = self.getElasticK8NodePortNumber()
+
             # Load the JSON mappings for the index.
             f = open(self._index_mapping_file)
             self._index_mappings = json.load(f)
             f.close()
 
             # Open connection to elastic
-            self._es_connection = ESUtil.get_connection(hostname='localhost',
-                                                        port_id='30365',
-                                                        elastic_user='elastic',
-                                                        elastic_password='changeme')
+            if self._es_connection is None:
+                self._es_connection = ESUtil.get_connection(hostname='localhost',
+                                                            port_id=str(port_id),
+                                                            elastic_user='elastic',
+                                                            elastic_password='changeme')
         except Exception as e:
             self.fail(f'Unexpected exception {str(e)}')
         return
