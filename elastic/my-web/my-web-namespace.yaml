@@ -1,8 +1,0 @@
-apiVersion: v1
-kind: Namespace
-metadata:
-  name: my-web
-  annotations:
-    appSuite : "Name of application suite"
-    appSuiteId : "EIS123456789"
-    contact: "dl-my-web@support.com.hk"

@@ -1,0 +1,5 @@
+numpy~=1.19.5
+python-kubernetes~=24.2.0
+pytz~=2021.1
+elasticsearch~=8.3.1
+setuptools~=52.0.0

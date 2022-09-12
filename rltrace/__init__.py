@@ -22,14 +22,26 @@
 # SOFTWARE.
 # ----------------------------------------------------------------------------
 
-class UtilsForTesting:
-    MARGIN_OF_ERROR: float = 1e-06
+import sys
 
-    @classmethod
-    def test_case(cls,
-                  func):
-        def annotated_test_case(*args, **kwargs):
-            print(f'- - - - - - R U N  {func.__name__}  - - - - - -')
-            func(*args, **kwargs)
+#: The release version
+version = '1.0.dev1'
+__version__ = version
 
-        return annotated_test_case
+MIN_PYTHON_VERSION = 3, 8
+MIN_PYTHON_VERSION_STR = '.'.join([str(v) for v in MIN_PYTHON_VERSION])
+
+if sys.version_info < MIN_PYTHON_VERSION:
+    raise Exception(f"pyglet {version} requires Python {MIN_PYTHON_VERSION_STR} or newer.")
+
+"""
+Core Trace function to log to console
+"""
+from rltrace.Trace import Trace  # NOQA
+from rltrace.Trace import LogLevel  # NOQA
+
+"""
+Elastic extensions to create an Elastic handler
+"""
+from rltrace.elastic.ElasticFormatter import ElasticFormatter  # NOQA
+from rltrace.elastic.ElasticHandler import ElasticHandler  # NOQA

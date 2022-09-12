@@ -22,14 +22,17 @@
 # SOFTWARE.
 # ----------------------------------------------------------------------------
 
-class UtilsForTesting:
-    MARGIN_OF_ERROR: float = 1e-06
+import logging
 
-    @classmethod
-    def test_case(cls,
-                  func):
-        def annotated_test_case(*args, **kwargs):
-            print(f'- - - - - - R U N  {func.__name__}  - - - - - -')
-            func(*args, **kwargs)
+"""
+Decorator to throw exception for all abstract methods with no intended implementation
+"""
 
-        return annotated_test_case
+
+def purevirtual(func):
+    def wrapper():
+        msg = "{} is a pure virtual function and must be implemented by child class".format(func.__name__)
+        logging.critical(msg)
+        raise NotImplementedError(msg)
+
+    return wrapper
