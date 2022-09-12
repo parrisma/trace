@@ -29,11 +29,11 @@ from time import sleep
 from typing import Dict, Any, Tuple
 from datetime import datetime
 from logging import LogRecord
-from kubernetes import client, config
 from Trace import Trace
 from Trace import LogLevel
 from elastic.ElasticFormatter import ElasticFormatter
 from elastic.ElasticHandler import ElasticHandler
+from elastic.ElasticBootStrap import ElasticBootStrap
 from UtilsForTesting import UtilsForTesting
 from rltrace.UniqueRef import UniqueRef
 from elastic.ESUtil import ESUtil
@@ -54,10 +54,6 @@ class TestElasticTrace(unittest.TestCase):
 
     def __init__(self, *args, **kwargs):
         super(TestElasticTrace, self).__init__(*args, **kwargs)
-        # Read in local config for Kube install.
-        if not self._loaded:
-            config.load_kube_config()
-            self._loaded = True
         return
 
     @classmethod
@@ -65,37 +61,14 @@ class TestElasticTrace(unittest.TestCase):
         cls._run = 0
         return
 
-    @classmethod
-    def getElasticK8NodePortNumber(cls,
-                                   namespace='elastic',
-                                   service_name='elastic-service') -> int:
-        """
-        Use kubectl to get the details of the elastic service and this teh node port assigned to elastic.
-        This assumes the elastic-search service is deployed and running with the deployment as defined
-        in the ./k8s-elastic dir.
-        :param namespace: The Kubernetes namespace in which the service is defined
-        :param service_name: The name of the service
-        """
-        node_port: int = None
-        v1 = client.CoreV1Api()
-        ret = v1.list_namespaced_service(namespace=namespace, watch=False)
-        for svc in ret.items:
-            if svc.metadata.name == service_name:
-                for port in svc.spec.ports:
-                    if port.port == 9200:
-                        node_port = svc.spec.ports[0].node_port
-                        break
-        v1.api_client.rest_client.pool_manager.clear()
-        v1.api_client.close()
-        return node_port
-
     def setUp(self) -> None:
         TestElasticTrace._run += 1
         print(f'- - - - - - C A S E {TestElasticTrace._run} Start - - - - - -')
         try:
             # Get the elastic hostport id.
+            port_id = None
             if self._node_port is None:
-                port_id = self.getElasticK8NodePortNumber()
+                port_id = ESUtil.get_elastic_node_port_number()
 
             # Load the JSON mappings for the index.
             f = open(self._index_mapping_file)
@@ -344,6 +317,36 @@ class TestElasticTrace(unittest.TestCase):
                 if not res:
                     raise Exception(f'failed to delete index {handler_index_name} while testing elastic logging')
 
+        return
+
+    @UtilsForTesting.test_case
+    def testA9FullBootStrap(self):
+        try:
+            trace: Trace = Trace(log_level=LogLevel.debug)
+            ebs = ElasticBootStrap(trace=trace,
+                                   hostname='localhost',
+                                   port_id=None,
+                                   elastic_user='elastic',
+                                   elastic_password='changeme',
+                                   index_name=f'trace_index_{UniqueRef().ref}')
+
+            sleep(1)
+            self.assertTrue(ESUtil.index_exists(es=ebs.elastic_connection, idx_name=ebs.index_name))
+
+            trace().debug(f'{Gibberish.more_gibber()}')
+            sleep(2)  # log write does not block on write so give time for record to flush before reading it back
+
+            # Check there is one logging entries.
+            res = ESUtil.run_count(es=ebs.elastic_connection,
+                                   idx_name=ebs.index_name,
+                                   json_query={"match_all": {}})
+            self.assertTrue(res == 1)
+
+            res = ESUtil.delete_index(es=ebs.elastic_connection, idx_name=ebs.index_name)
+            if not res:
+                raise Exception(f'failed to delete index {ebs.index_name} while testing elastic logging')
+        except Exception as e:
+            self.fail(f'Unexpected exception {str(e)}')
         return
 
     @UtilsForTesting.test_case

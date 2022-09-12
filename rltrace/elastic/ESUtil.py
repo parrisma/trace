@@ -29,6 +29,7 @@ import pytz
 import re
 import json
 from elasticsearch import Elasticsearch
+from kubernetes import client, config
 
 
 class ESUtil:
@@ -37,8 +38,10 @@ class ESUtil:
     """
     # Annotations
     _es: Dict[str, Elasticsearch]
+    _k8s_config: config
 
     _es = dict()
+    _k8s_config = config.load_kube_config()
 
     _ALL = 10000
     _SCROLL = '1m'
@@ -325,3 +328,27 @@ class ESUtil:
             raise RuntimeError(
                 "Failed to execute aggregation search query [{}] on Index [{}]".format(json_query, idx_name))
         return search_res
+
+    @classmethod
+    def get_elastic_node_port_number(cls,
+                                     namespace='elastic',
+                                     service_name='elastic-service') -> int:
+        """
+        Use kubectl to get the details of the elastic service and this teh node port assigned to elastic.
+        This assumes the elastic-search service is deployed and running with the deployment as defined
+        in the ./k8s-elastic dir.
+        :param namespace: The Kubernetes namespace in which the service is defined
+        :param service_name: The name of the service
+        """
+        node_port: int = None
+        v1 = client.CoreV1Api()
+        ret = v1.list_namespaced_service(namespace=namespace, watch=False)
+        for svc in ret.items:
+            if svc.metadata.name == service_name:
+                for port in svc.spec.ports:
+                    if port.port == 9200:
+                        node_port = svc.spec.ports[0].node_port
+                        break
+        v1.api_client.rest_client.pool_manager.clear()
+        v1.api_client.close()
+        return node_port

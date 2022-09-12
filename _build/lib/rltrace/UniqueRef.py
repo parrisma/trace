@@ -21,28 +21,20 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 # ----------------------------------------------------------------------------
+import uuid
 
-import sys
 
-#: The release version
-version = '1.0.dev1'
-__version__ = version
+class UniqueRef:
+    def __init__(self):
+        # UUID type 4 is the 'most-unique'
+        self._unique_ref = str(uuid.uuid4()).replace('-', '')
 
-MIN_PYTHON_VERSION = 3, 8
-MIN_PYTHON_VERSION_STR = '.'.join([str(v) for v in MIN_PYTHON_VERSION])
+    @property
+    def ref(self) -> str:
+        return self._unique_ref
 
-if sys.version_info < MIN_PYTHON_VERSION:
-    raise Exception(f"pyglet {version} requires Python {MIN_PYTHON_VERSION_STR} or newer.")
+    def __str__(self):
+        return self._unique_ref
 
-"""
-Core Trace function to log to console
-"""
-from rltrace.Trace import Trace  # NOQA
-from rltrace.Trace import LogLevel  # NOQA
-from rltrace.UniqueRef import UniqueRef  # NOQA
-
-"""
-Elastic extensions to create an Elastic handler
-"""
-from rltrace.elastic.ElasticFormatter import ElasticFormatter  # NOQA
-from rltrace.elastic.ElasticHandler import ElasticHandler  # NOQA
+    def __repr__(self):
+        return str(self)
