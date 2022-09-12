@@ -67,15 +67,17 @@ class Trace:
         :param session_uuid: The session UUID to report trace messages as originating from
         :param log_level: The initial logging level
         """
-        if session_uuid is None or len(session_uuid) == 0:
-            session_uuid = UniqueRef().ref
-        self._session_uuid = session_uuid
+        self._session_uuid = UniqueRef().ref
         self._elastic_handler = None
         self._console_handler = None
         self._logger = None
-        self._bootstrap(session_uuid=session_uuid,
+        self._bootstrap(session_uuid=self._session_uuid,
                         log_level=log_level)
         return
+
+    @property
+    def session_uuid(self) -> str:
+        return self._session_uuid
 
     def _bootstrap(self,
                    session_uuid: str,
@@ -91,6 +93,14 @@ class Trace:
             self.enable_console_handler()
             sys.stdout = self.StreamToLogger(self._logger, logging.INFO)
             sys.stderr = self.StreamToLogger(self._logger, logging.ERROR)
+        return
+
+    def new_session(self) -> None:
+        """
+        Change the session id to a different, randomly generated GUID. This allows a specific subset of trace
+        traffic to be selected from the overall handler capture.
+        """
+        self._session_uuid = UniqueRef().ref
         return
 
     def enable_console_handler(self) -> None:

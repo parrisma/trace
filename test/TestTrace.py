@@ -62,3 +62,16 @@ class TestTrace(unittest.TestCase):
         except Exception as e:
             self.fail(f'Unexpected exception {str(e)}')
         return
+
+    @UtilsForTesting.test_case
+    def testTraceChangeOfSessionUUID(self):
+        try:
+            trace: Trace = Trace(log_level=LogLevel.debug)
+            session_uuid = trace.session_uuid
+            self.assertTrue(session_uuid == trace.session_uuid)
+            for _ in range(1000):
+                trace.new_session()
+                self.assertTrue(session_uuid != trace.session_uuid)
+        except Exception as e:
+            self.fail(f'Unexpected exception {str(e)}')
+        return
