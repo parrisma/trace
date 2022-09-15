@@ -26,14 +26,14 @@ import unittest
 import json
 import logging
 from time import sleep
-from typing import Dict, Any, Tuple
+from typing import Dict, Any, Tuple, List
 from datetime import datetime
 from logging import LogRecord
 from Trace import Trace
 from Trace import LogLevel
 from elastic.ElasticFormatter import ElasticFormatter
 from elastic.ElasticHandler import ElasticHandler
-from elastic.ElasticBootStrap import ElasticBootStrap
+from elastic.ElasticTraceBootStrap import ElasticTraceBootStrap
 from UtilsForTesting import UtilsForTesting
 from rltrace.UniqueRef import UniqueRef
 from elastic.ESUtil import ESUtil
@@ -322,29 +322,31 @@ class TestElasticTrace(unittest.TestCase):
     @UtilsForTesting.test_case
     def testA9FullBootStrap(self):
         try:
-            trace: Trace = Trace(log_level=LogLevel.debug)
-            ebs = ElasticBootStrap(trace=trace,
-                                   hostname='localhost',
-                                   port_id=None,
-                                   elastic_user='elastic',
-                                   elastic_password='changeme',
-                                   index_name=f'trace_index_{UniqueRef().ref}')
+            traces: List[Trace] = [None, Trace(log_level=LogLevel.debug)]
+            for trace in traces:
+                ebs = ElasticTraceBootStrap(trace=trace,
+                                            hostname='localhost',
+                                            port_id=None,
+                                            elastic_user='elastic',
+                                            elastic_password='changeme',
+                                            index_name=f'trace_index_{UniqueRef().ref}')
 
-            sleep(1)
-            self.assertTrue(ESUtil.index_exists(es=ebs.elastic_connection, idx_name=ebs.index_name))
+                sleep(1)
+                self.assertTrue(ESUtil.index_exists(es=ebs.elastic_connection, idx_name=ebs.index_name))
 
-            trace().debug(f'{Gibberish.more_gibber()}')
-            sleep(2)  # log write does not block on write so give time for record to flush before reading it back
+                trace = ebs.trace if trace is None else trace
+                trace().debug(f'{Gibberish.more_gibber()}')
+                sleep(2)  # log write does not block on write so give time for record to flush before reading it back
 
-            # Check there is one logging entries.
-            res = ESUtil.run_count(es=ebs.elastic_connection,
-                                   idx_name=ebs.index_name,
-                                   json_query={"match_all": {}})
-            self.assertTrue(res == 1)
+                # Check there is one logging entries.
+                res = ESUtil.run_count(es=ebs.elastic_connection,
+                                       idx_name=ebs.index_name,
+                                       json_query={"match_all": {}})
+                self.assertTrue(res == 1)
 
-            res = ESUtil.delete_index(es=ebs.elastic_connection, idx_name=ebs.index_name)
-            if not res:
-                raise Exception(f'failed to delete index {ebs.index_name} while testing elastic logging')
+                res = ESUtil.delete_index(es=ebs.elastic_connection, idx_name=ebs.index_name)
+                if not res:
+                    raise Exception(f'failed to delete index {ebs.index_name} while testing elastic logging')
         except Exception as e:
             self.fail(f'Unexpected exception {str(e)}')
         return

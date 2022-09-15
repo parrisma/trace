@@ -4,10 +4,10 @@ from elastic.ESUtil import ESUtil
 from elastic.ElasticHandler import ElasticHandler
 
 
-class ElasticBootStrap:
+class ElasticTraceBootStrap:
 
     def __init__(self,
-                 trace: Trace,
+                 trace: Trace = None,
                  hostname: str = 'localhost',
                  port_id: int = None,
                  elastic_user: str = 'elastic',
@@ -32,7 +32,7 @@ class ElasticBootStrap:
         :param index_definition: The file name containing the JSON definition of the Index, if None use standard def
         :param kubernetes_namespace: The Kubernetes namespace where the elastic objects we defined, default = elastic
         """
-        self._trace: Trace = trace
+        self._trace: Trace = Trace(log_level=initial_log_level) if trace is None else trace
         self._hostname: str = hostname
         self._port_id: int = port_id
         self._elastic_user: str = elastic_user
@@ -68,6 +68,10 @@ class ElasticBootStrap:
     @property
     def elastic_connection(self):
         return self._es_connection
+
+    @property
+    def trace(self):
+        return self._trace
 
     def _validate_port_id(self) -> None:
         """
