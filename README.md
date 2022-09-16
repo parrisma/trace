@@ -84,7 +84,7 @@ es_connection = ESUtil.get_connection(hostname='localhost',
                                       elastic_user='elastic',
                                       elastic_password='changeme')
 
-index_mappings = json.load(open('..\\elastic\\k8s-elastic\\elastic-log-index.json'))
+index_mappings = json.load(open('resources/elastic-log-index.json'))
 res = ESUtil.create_index_from_json(es=es_connection,
                                     idx_name=handler_index_name,
                                     mappings_as_json=index_mappings)
@@ -95,5 +95,5 @@ if not res:
 elastic_handler = ElasticHandler(es=es_connection,
                                  trace_log_index_name=handler_index_name)
 trace: Trace = Trace(log_level=LogLevel.debug)
-trace.enable_handler(elastic_handler) # Message now go to console & the elastic index created above
+trace.enable_handler(elastic_handler)  # Message now go to console & the elastic index created above
 ```

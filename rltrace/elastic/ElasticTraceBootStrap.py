@@ -2,6 +2,7 @@ import json
 from rltrace.Trace import Trace, LogLevel
 from elastic.ESUtil import ESUtil
 from elastic.ElasticHandler import ElasticHandler
+from elastic.ElasticResources import ElasticResources
 
 
 class ElasticTraceBootStrap:
@@ -40,7 +41,7 @@ class ElasticTraceBootStrap:
         self._index_name: str = index_name
         self._index_definition: str = index_definition
         if self._index_definition is None:
-            self._index_definition = '..\\elastic\\k8s-elastic\\elastic-log-index.json'
+            self._index_definition = ElasticResources.trace_index_definition_file()
         self._kubernetes_namespace: str = kubernetes_namespace
         self._initial_log_level = initial_log_level
 

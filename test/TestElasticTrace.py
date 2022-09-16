@@ -34,6 +34,7 @@ from Trace import LogLevel
 from elastic.ElasticFormatter import ElasticFormatter
 from elastic.ElasticHandler import ElasticHandler
 from elastic.ElasticTraceBootStrap import ElasticTraceBootStrap
+from elastic.ElasticResources import ElasticResources
 from UtilsForTesting import UtilsForTesting
 from rltrace.UniqueRef import UniqueRef
 from elastic.ESUtil import ESUtil
@@ -49,7 +50,7 @@ class TestElasticTrace(unittest.TestCase):
     _node_port: int = None
     _loaded: bool = False
     _index_name: str = f'index-{UniqueRef().ref}'
-    _index_mapping_file: str = '..\\elastic\\k8s-elastic\\elastic-log-index.json'
+    _index_mapping_file: str = ElasticResources.trace_index_definition_file()
     _index_mappings: str = None
 
     def __init__(self, *args, **kwargs):
