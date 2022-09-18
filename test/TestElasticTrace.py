@@ -50,8 +50,9 @@ class TestElasticTrace(unittest.TestCase):
     _node_port: int = None
     _loaded: bool = False
     _index_name: str = f'index-{UniqueRef().ref}'
-    _index_mapping_file: str = ElasticResources.trace_index_definition_file()
+    _index_mapping_file: str = ElasticResources.trace_index_definition_file('..\\resources')
     _index_mappings: str = None
+    _index_to_delete: List[str] = list()
 
     def __init__(self, *args, **kwargs):
         super(TestElasticTrace, self).__init__(*args, **kwargs)
@@ -82,6 +83,7 @@ class TestElasticTrace(unittest.TestCase):
                                                             port_id=str(port_id),
                                                             elastic_user='elastic',
                                                             elastic_password='changeme')
+            self._index_to_delete.append(self._index_name)
         except Exception as e:
             self.fail(f'Unexpected exception {str(e)}')
         return
@@ -275,6 +277,7 @@ class TestElasticTrace(unittest.TestCase):
                                                 mappings_as_json=self._index_mappings)
             if not res:
                 raise Exception(f'failed to create index {handler_index_name} for testing elastic logging')
+            self._index_to_delete.append(handler_index_name)
 
             elastic_handler = ElasticHandler(es=self._es_connection,
                                              trace_log_index_name=handler_index_name)
@@ -323,17 +326,20 @@ class TestElasticTrace(unittest.TestCase):
     @UtilsForTesting.test_case
     def testA9FullBootStrap(self):
         try:
-            traces: List[Trace] = [None, Trace(log_level=LogLevel.debug)]
-            for trace in traces:
+            test_cases = [[None, None], [Trace(log_level=LogLevel.debug), '..\\resources']]
+
+            for trace, index_def in test_cases:
                 ebs = ElasticTraceBootStrap(trace=trace,
                                             hostname='localhost',
                                             port_id=None,
                                             elastic_user='elastic',
                                             elastic_password='changeme',
+                                            index_definition=index_def,
                                             index_name=f'trace_index_{UniqueRef().ref}')
 
                 sleep(1)
                 self.assertTrue(ESUtil.index_exists(es=ebs.elastic_connection, idx_name=ebs.index_name))
+                self._index_to_delete.append(ebs.index_name)
 
                 trace = ebs.trace if trace is None else trace
                 trace().debug(f'{Gibberish.more_gibber()}')
@@ -348,19 +354,21 @@ class TestElasticTrace(unittest.TestCase):
                 res = ESUtil.delete_index(es=ebs.elastic_connection, idx_name=ebs.index_name)
                 if not res:
                     raise Exception(f'failed to delete index {ebs.index_name} while testing elastic logging')
+
         except Exception as e:
-            self.fail(f'Unexpected exception {str(e)}')
+            raise Exception(f'Unexpected exception {str(e)}')
         return
 
     @UtilsForTesting.test_case
     def testZ9CleanUp(self):
         # Clean up, delete the test index.
-        if ESUtil.index_exists(es=self._es_connection,
-                               idx_name=self._index_name):
-            res = ESUtil.delete_index(es=self._es_connection,
-                                      idx_name=self._index_name)
-            self.assertTrue(True, res)
-            self.assertFalse(ESUtil.index_exists(es=self._es_connection, idx_name=self._index_name))
+        for index_name in self._index_to_delete:
+            if ESUtil.index_exists(es=self._es_connection,
+                                   idx_name=index_name):
+                res = ESUtil.delete_index(es=self._es_connection,
+                                          idx_name=index_name)
+                self.assertTrue(True, res)
+                self.assertFalse(ESUtil.index_exists(es=self._es_connection, idx_name=index_name))
         return
 
 

@@ -1,4 +1,5 @@
 import json
+import os
 from rltrace.Trace import Trace, LogLevel
 from elastic.ESUtil import ESUtil
 from elastic.ElasticHandler import ElasticHandler
@@ -39,9 +40,7 @@ class ElasticTraceBootStrap:
         self._elastic_user: str = elastic_user
         self._elastic_password: str = elastic_password
         self._index_name: str = index_name
-        self._index_definition: str = index_definition
-        if self._index_definition is None:
-            self._index_definition = ElasticResources.trace_index_definition_file()
+        self._index_definition: str = index_definition  # Lazy evaluate, only check if file if index does not exist
         self._kubernetes_namespace: str = kubernetes_namespace
         self._initial_log_level = initial_log_level
 
@@ -53,6 +52,47 @@ class ElasticTraceBootStrap:
         self._create_and_attach_elastic_handler()
 
         return
+
+    def _get_index_definition_as_json(self,
+                                      dir_or_full_path_and_filename: str):
+        """
+        Given either a full path or directory, construct the full path & name of the json file that defines the
+        trace index, retrieve the JSON
+        If given is None then use default definition
+        If given is a directory, assume the file is called elastic-log-index.json
+        Else use the full path and file name
+
+        :param dir_or_full_path_and_filename: The full path and filename or the directory where file exists
+
+        """
+        if dir_or_full_path_and_filename is None:
+            index_mappings = json.loads(ElasticResources.trace_index_definition_as_json())
+        else:
+            f = open(self._get_index_definition(self._index_definition))
+            index_mappings = json.load(f)
+            f.close()
+        return index_mappings
+
+    @staticmethod
+    def _get_index_definition(dir_or_full_path_and_filename: str):
+        """
+        Given either a full path or directory, construct the full path & name of the json file that defines the
+        trace index.
+        If given is None then look in current working directory.
+        If given is a directory, assume the file is called elastic-log-index.json
+        :param dir_or_full_path_and_filename: The full path and filename or the directory where file exists
+        """
+        index_definition: str = None
+        if dir_or_full_path_and_filename is None:
+            dir_or_full_path_and_filename = '.\\'  # assume its in cwd
+
+        if os.path.isdir(dir_or_full_path_and_filename):
+            index_definition = ElasticResources.trace_index_definition_file(resource_root=dir_or_full_path_and_filename)
+        elif os.path.isfile(dir_or_full_path_and_filename):
+            index_definition = dir_or_full_path_and_filename
+        else:
+            raise ValueError(f'Index definition cannot be found {index_definition}')
+        return index_definition
 
     @property
     def port_id(self) -> int:
@@ -108,9 +148,7 @@ class ElasticTraceBootStrap:
             # Test create index
             if not ESUtil.index_exists(es=self._es_connection,
                                        idx_name=self._index_name):
-                f = open(self._index_definition)
-                index_mappings = json.load(f)
-                f.close()
+                index_mappings = self._get_index_definition_as_json(self._index_definition)
                 res = ESUtil.create_index_from_json(es=self._es_connection, idx_name=self._index_name,
                                                     mappings_as_json=index_mappings)
                 if not res:

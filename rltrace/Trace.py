@@ -60,11 +60,9 @@ class Trace:
             return b''
 
     def __init__(self,
-                 session_uuid: str = None,
                  log_level: LogLevel = LogLevel.new()):
         """
         Establish trace logging
-        :param session_uuid: The session UUID to report trace messages as originating from
         :param log_level: The initial logging level
         """
         self._session_uuid = UniqueRef().ref
