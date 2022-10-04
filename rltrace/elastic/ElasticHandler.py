@@ -29,6 +29,7 @@ from elastic.ElasticFormatter import ElasticFormatter
 
 
 class ElasticHandler(Handler):
+    _ELASTIC_HANDLER_UNIQUE_NAME: str = 'Trace-73702c6afbb74892a5393278bd088bb4-ElasticDBHandler'
     _es: Elasticsearch
 
     def __init__(self,
@@ -42,8 +43,17 @@ class ElasticHandler(Handler):
         Handler.__init__(self)
         self._es = es
         self._es_index = trace_log_index_name
+        self.set_name(self.elastic_handler_unique_name())
         self.setFormatter(ElasticFormatter())
         return
+
+    @classmethod
+    def elastic_handler_unique_name(cls) -> str:
+        return ElasticHandler._ELASTIC_HANDLER_UNIQUE_NAME
+
+    @property
+    def index_name(self) -> str:
+        return self._es_index
 
     def emit(self,
              record: LogRecord) -> None:

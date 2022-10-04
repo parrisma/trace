@@ -128,3 +128,4 @@ dmypy.json
 .pyre/
 /elastic/data/
 /elastic/html/
+/logs/

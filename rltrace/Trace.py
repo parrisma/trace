@@ -24,19 +24,15 @@
 
 import logging
 import sys
+import os.path
 from UniqueRef import UniqueRef
 from LogLevel import LogLevel
 
 
 class Trace:
-    # Annotation
-    _CONSOLE_FORMATTER: logging.Formatter
-    _logger: logging.Logger
-    _console_handler: logging.Handler
-    _session_uuid: str
-
+    _TRACE_UNIQUE_NAME = 'Trace-73702c6afbb74892a5393278bd088bb4'
     # %f - milliseconds not supported on Windows for 'time' module
-    _CONSOLE_FORMATTER = logging.Formatter("%(asctime)s — %(name)s - %(levelname)s — %(message)s",
+    _CONSOLE_FORMATTER = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s",
                                            datefmt='%Y-%m-%dT%H:%M:%S.%z')
 
     class StreamToLogger(object):
@@ -60,36 +56,87 @@ class Trace:
             return b''
 
     def __init__(self,
-                 log_level: LogLevel = LogLevel.new()):
+                 log_level: LogLevel = LogLevel.new(),
+                 log_dir_name: str = None,
+                 log_file_name: str = 'rltrace.log',
+                 session_uuid: str = None):
         """
         Establish trace logging
         :param log_level: The initial logging level
+        :param log_dir_name: The directory where the log file is to be created, by default this is None and no log
+                           : file is created. If the directory does not exist a Value error is thrown
+        :param log_file_name: The name of the logfile, if default is rltrace.log
         """
-        self._session_uuid = UniqueRef().ref
+        self._session_uuid = UniqueRef().ref if session_uuid is None else session_uuid
         self._elastic_handler = None
         self._console_handler = None
+        self._file_handler = None
+        self._log_leve = log_level
         self._logger = None
-        self._bootstrap(session_uuid=self._session_uuid,
-                        log_level=log_level)
+        self._log_dir_name = None
+        self._log_file_name = None
+        if log_dir_name is not None:
+            if not os.path.isdir(log_dir_name):
+                raise ValueError(f'Invalid directory name given for log file {log_dir_name}')
+            else:
+                self._log_dir_name = log_dir_name
+                self._log_file_name = os.path.join(log_dir_name, log_file_name)
+        self._bootstrap(log_level=log_level)
         return
+
+    @classmethod
+    def trace_unique_name(cls) -> str:
+        return Trace._TRACE_UNIQUE_NAME
+
+    @property
+    def trace_console_handler_unique_name(self) -> str:
+        return f'{self.trace_unique_name()}-ConsoleHandler'
+
+    @property
+    def trace_file_handler_unique_name(self) -> str:
+        return f'{self.trace_unique_name()}-FileHandler'
 
     @property
     def session_uuid(self) -> str:
         return self._session_uuid
 
+    @property
+    def log_file_dir(self) -> str:
+        return self._log_dir_name
+
+    @property
+    def current_log_level(self):
+        return self._log_leve
+
+    def get_handler_by_name(self,
+                            handler_name: str) -> logging.Handler:
+        """
+        Get the handler that matches the given name
+        :param handler_name: The name of the handler to find and return
+        :return: The matching handler object or None if not found
+        """
+        required_handler: logging.Handler = None
+        for required_handler in self._logger.handlers:
+            if required_handler.name == handler_name:
+                break
+        return required_handler
+
     def _bootstrap(self,
-                   session_uuid: str,
                    log_level: LogLevel) -> None:
         """
         Create a logger and enable the default console logger
         :param session_uuid: The session uuid to use as the name of the logger
         """
-        if self._logger is None:
-            self._logger = logging.getLogger(session_uuid)
-            log_level.set(self._logger)
-            self._logger.propagate = False  # Ensure only added handlers log i.e. disable parent logging handler
-            self.enable_console_handler()
+
+        # Is Trace already enabled via another call in this session
+        self._logger = logging.getLogger(self.trace_unique_name())
+        log_level.set(self._logger)
+        self._logger.propagate = False  # Ensure only added handlers log i.e. disable parent logging handler
+        self.enable_console_handler()
+        self.enable_file_handler()
+        if not isinstance(sys.stdout, Trace.StreamToLogger):
             sys.stdout = self.StreamToLogger(self._logger, logging.INFO)
+        if not isinstance(sys.stderr, Trace.StreamToLogger):
             sys.stderr = self.StreamToLogger(self._logger, logging.ERROR)
         return
 
@@ -101,16 +148,55 @@ class Trace:
         self._session_uuid = UniqueRef().ref
         return
 
+    def __list_loggers(self):
+        """
+        A debug function that can be used to dump out entire set of loggers and handlers.
+        """
+        print(self._logger)
+        for h in self._logger.handlers:
+            print('     %s' % h)
+
+        for nm, lgr in logging.Logger.manager.loggerDict.items():
+            print('+ [%-20s] %s ' % (nm, lgr))
+            if not isinstance(lgr, logging.PlaceHolder):
+                for h in lgr.handlers:
+                    print('     %s' % h)
+
     def enable_console_handler(self) -> None:
         """
         Create the console handler and add it as a handler to the current logger
         """
+        handler: logging.Handler = None
+        for handler in self._logger.handlers:
+            if handler.name == self.trace_console_handler_unique_name:
+                self._console_handler = handler
+                break
+
         if self._console_handler is None:
             self._console_handler = logging.StreamHandler(sys.stdout)
-            self._console_handler.name = "{}-ConsoleHandler".format(self._logger.name)
+            self._console_handler.name = self.trace_console_handler_unique_name
             self._console_handler.setLevel(level=self._logger.level)
             self._console_handler.setFormatter(Trace._CONSOLE_FORMATTER)
             self._logger.addHandler(self._console_handler)
+        return
+
+    def enable_file_handler(self):
+        """
+        Attach a log to file handler
+        """
+        handler: logging.Handler = None
+        for handler in self._logger.handlers:
+            if handler.name == self.trace_file_handler_unique_name:
+                self._file_handler = handler
+                break
+
+        if self._log_dir_name is not None:
+            if self._file_handler is None:
+                self._file_handler = logging.FileHandler(self._log_file_name)
+                self._file_handler.name = self.trace_file_handler_unique_name
+                self._file_handler.setLevel(level=self._logger.level)
+                self._file_handler.setFormatter(Trace._CONSOLE_FORMATTER)
+                self._logger.addHandler(self._file_handler)
         return
 
     def enable_handler(self,
@@ -124,10 +210,21 @@ class Trace:
         if not isinstance(handler, logging.Handler):
             raise ValueError(f'Expected handler but given {handler.__class__.name}')
 
-        handler.setLevel(level=self._logger.level)
-        self._logger.addHandler(handler)
+        # Don't add handler if a handler of same name is already added
+        if not self.contains_handler(handler.name):
+            handler.setLevel(level=self._logger.level)
+            self._logger.addHandler(handler)
 
         return
+
+    def contains_handler(self,
+                         handler_name: str) -> bool:
+        """
+        Check if a handler of the given name is already added to the Trace logger
+        :param handler_name: The name of the handler to check for
+        :return: True if teh given handler is mapped to the logger associated with the Trace object
+        """
+        return any([handler_name == h.name for h in self._logger.handlers])
 
     def enable_tf_capture(self,
                           tf_logger: logging.Logger) -> None:

@@ -103,7 +103,8 @@ class ESUtil:
         connection_str = "http://{}:{}".format(hostname, port_id)
         if cls._es.get(connection_str, None) is None:
             try:
-                cls._es[connection_str] = Elasticsearch([connection_str], basic_auth=(elastic_user, elastic_password))
+                cls._es[connection_str] = Elasticsearch([connection_str],
+                                                        basic_auth=(elastic_user, elastic_password))
             except Exception as e:
                 raise RuntimeError("Failed to open Elastic search connection {}:{}".format(hostname, port_id))
         return cls._es[connection_str]

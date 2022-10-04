@@ -18,6 +18,8 @@ class ElasticTraceBootStrap:
                  index_definition: str = None,
                  kubernetes_namespace: str = 'elastic',
                  initial_log_level: LogLevel = LogLevel.debug,
+                 log_dir_name: str = None,
+                 log_file_name: str = 'rltrace.log',
                  *args,
                  **kwargs) -> None:
         """
@@ -33,8 +35,13 @@ class ElasticTraceBootStrap:
         :param index_name: The name of the index, if it does not exist it is created
         :param index_definition: The file name containing the JSON definition of the Index, if None use standard def
         :param kubernetes_namespace: The Kubernetes namespace where the elastic objects we defined, default = elastic
+        :param initial_log_level: The log level to set (Debug, Info etc.) default is debug
+        :param log_dir_name: The directory where the log file is to be created, no log file if dir is (default) None
+        :param log_file_name: The name of the logfile, default is rltrace.log
         """
-        self._trace: Trace = Trace(log_level=initial_log_level) if trace is None else trace
+        self._trace: Trace = Trace(log_level=initial_log_level,
+                                   log_dir_name=log_dir_name,
+                                   log_file_name=log_file_name) if trace is None else trace
         self._hostname: str = hostname
         self._port_id: int = port_id
         self._elastic_user: str = elastic_user
@@ -46,10 +53,16 @@ class ElasticTraceBootStrap:
 
         self._es_connection = None
 
-        self._validate_port_id()
-        self._connect_to_elastic()
-        self._validate_or_create_index()
-        self._create_and_attach_elastic_handler()
+        if not self._trace.contains_handler(ElasticHandler.elastic_handler_unique_name()):
+            self._validate_port_id()
+            self._connect_to_elastic()
+            self._validate_or_create_index()
+            self._create_and_attach_elastic_handler()
+        else:
+            current_elastic_handler: ElasticHandler = self._trace.get_handler_by_name(  # NOQA
+                ElasticHandler.elastic_handler_unique_name())  # NOQA
+            if current_elastic_handler.index_name != self._index_name:
+                raise ValueError(f'Cannot enable another elastic handler on different index {self._index_name}')
 
         return
 
@@ -95,24 +108,20 @@ class ElasticTraceBootStrap:
         return index_definition
 
     @property
-    def port_id(self) -> int:
-        return self._port_id
+    def trace(self) -> Trace:
+        return self._trace
 
     @property
     def index_name(self) -> str:
         return self._index_name
 
     @property
-    def host_name(self) -> str:
-        return self._hostname
-
-    @property
     def elastic_connection(self):
+        # connection may be None as we only open it if an elastic handler is not already added to logger
+        if self._es_connection is None:
+            self._validate_port_id()
+            self._connect_to_elastic()
         return self._es_connection
-
-    @property
-    def trace(self):
-        return self._trace
 
     def _validate_port_id(self) -> None:
         """

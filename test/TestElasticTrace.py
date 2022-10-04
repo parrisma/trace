@@ -21,10 +21,11 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 # ----------------------------------------------------------------------------
-
+import os
 import unittest
 import json
 import logging
+import re
 from time import sleep
 from typing import Dict, Any, Tuple, List
 from datetime import datetime
@@ -39,6 +40,9 @@ from UtilsForTesting import UtilsForTesting
 from rltrace.UniqueRef import UniqueRef
 from elastic.ESUtil import ESUtil
 from gibberish import Gibberish
+from functools import partial
+import concurrent.futures
+from multiprocessing import Process
 
 # We need to run tests in (alphabetical) order.
 unittest.TestLoader.sortTestMethodsUsing = lambda self, a, b: (a > b) - (a < b)
@@ -52,44 +56,99 @@ class TestElasticTrace(unittest.TestCase):
     _index_name: str = f'index-{UniqueRef().ref}'
     _index_mapping_file: str = ElasticResources.trace_index_definition_file('..\\resources')
     _index_mappings: str = None
-    _index_to_delete: List[str] = list()
 
     def __init__(self, *args, **kwargs):
         super(TestElasticTrace, self).__init__(*args, **kwargs)
         return
 
     @classmethod
-    def setUpClass(cls):
+    def setUpClass(cls) -> None:
         cls._run = 0
+        print(f'- - - - - - S T A R T - - - - - -')
+        cls._clean_up_test_files()
+        try:
+            # Get the elastic hostport id.
+            port_id = None
+            if cls._node_port is None:
+                port_id = ESUtil.get_elastic_node_port_number()
+
+            # Load the JSON mappings for the index.
+            f = open(cls._index_mapping_file)
+            cls._index_mappings = json.load(f)
+            f.close()
+
+            # Open connection to elastic
+            if cls._es_connection is None:
+                cls._es_connection = ESUtil.get_connection(hostname='localhost',
+                                                           port_id=str(port_id),
+                                                           elastic_user='elastic',
+                                                           elastic_password='changeme')
+        except Exception as e:
+            print(f'Unexpected exception {str(e)}')
         return
 
     def setUp(self) -> None:
         TestElasticTrace._run += 1
         print(f'- - - - - - C A S E {TestElasticTrace._run} Start - - - - - -')
-        try:
-            # Get the elastic hostport id.
-            port_id = None
-            if self._node_port is None:
-                port_id = ESUtil.get_elastic_node_port_number()
+        self._clean_up_handlers()  # Logger is global so we must reset between tests
+        return
 
-            # Load the JSON mappings for the index.
-            f = open(self._index_mapping_file)
-            self._index_mappings = json.load(f)
-            f.close()
-
-            # Open connection to elastic
-            if self._es_connection is None:
-                self._es_connection = ESUtil.get_connection(hostname='localhost',
-                                                            port_id=str(port_id),
-                                                            elastic_user='elastic',
-                                                            elastic_password='changeme')
-            self._index_to_delete.append(self._index_name)
-        except Exception as e:
-            self.fail(f'Unexpected exception {str(e)}')
+    @classmethod
+    def tearDownClass(cls) -> None:
+        print(f'- - - - - - E N D - - - - - - \n')
+        cls._clean_up_test_files()
+        cls._delete_all_test_indexes()
         return
 
     def tearDown(self) -> None:
         print(f'- - - - - - C A S E {TestElasticTrace._run} Passed - - - - - -\n')
+        return
+
+    @classmethod
+    def _delete_all_test_indexes(cls):
+        # Find any residual indices from failed test clean-ups
+        try:
+            for candidate in cls._es_connection.cat.indices().body.split():
+                if re.match(r'(trace_index_.*|index_handler_.*|index-.*)', candidate):
+                    if ESUtil.index_exists(es=cls._es_connection,
+                                           idx_name=candidate):
+                        ESUtil.delete_index(es=cls._es_connection,
+                                            idx_name=candidate)
+                        print(f'Cleaned up (deleted) test index {candidate}')
+
+        except Exception as e:
+            print(f'Failed to find list of test indices with error {str(e)}')
+        return
+
+    @staticmethod
+    def _clean_up_handlers():
+        lgr = logging.getLogger(Trace.trace_unique_name())
+        handlers = [h for h in lgr.handlers]  # cannot use lgr.handlers in for loop as we are modifying it
+        for handler in handlers:
+            if re.match(r'(.*-ConsoleHandler|.*-FileHandler|.*-ElasticDBHandler)', handler.name):
+                try:
+                    handler.acquire()
+                    handler.flush()
+                    handler.close()
+                except (OSError, ValueError):
+                    pass
+                finally:
+                    handler.release()
+                lgr.removeHandler(handler)
+                print(f'Cleaned up (Removed) logging handler {handler.name}')
+        return
+
+    @staticmethod
+    def _clean_up_test_files():
+        dirs_to_clean = [[".", r'.*\.log']]
+        for dir_to_clean, pattern in dirs_to_clean:
+            files_to_delete = [os.path.join(dir_to_clean, f) for f in os.listdir(dir_to_clean) if re.match(pattern, f)]
+            for file_to_delete in files_to_delete:
+                print(f'- - - - - - deleting test file {files_to_delete}')
+                try:
+                    os.remove(file_to_delete)
+                except Exception as e:
+                    print(f'- - - - - - Warning - failed to delete {files_to_delete} with error {str(e)}')
         return
 
     @staticmethod
@@ -257,27 +316,20 @@ class TestElasticTrace(unittest.TestCase):
             self.assertTrue(actual[ElasticFormatter.json_log_fields[3]] == lr_msg)
         except Exception as e:
             self.fail(f'Unexpected exception {str(e)}')
-        finally:
-            if ESUtil.index_exists(es=self._es_connection,
-                                   idx_name=handler_index_name):
-                res = ESUtil.delete_index(es=self._es_connection,
-                                          idx_name=handler_index_name)
-                if not res:
-                    raise Exception(f'failed to delete index {handler_index_name} while testing elastic logging')
 
         return
 
     @UtilsForTesting.test_case
     def testA8ElasticLoggingViaTrace(self):
         handler_index_name = f'index_handler_{UniqueRef().ref}'
-        session_uuid = UniqueRef().ref
+        num_tests: int = 10
+        messages: List[str] = []
         try:
             res = ESUtil.create_index_from_json(es=self._es_connection,
                                                 idx_name=handler_index_name,
                                                 mappings_as_json=self._index_mappings)
             if not res:
                 raise Exception(f'failed to create index {handler_index_name} for testing elastic logging')
-            self._index_to_delete.append(handler_index_name)
 
             elastic_handler = ElasticHandler(es=self._es_connection,
                                              trace_log_index_name=handler_index_name)
@@ -292,54 +344,49 @@ class TestElasticTrace(unittest.TestCase):
                                    json_query={"match_all": {}})
             self.assertTrue(res == 0)
 
-            # Create dummy log message
-            lr_msg = Gibberish.more_gibber()
+            for _ in range(num_tests):
+                # Create dummy log message
+                lr_msg = Gibberish.more_gibber()
+                trace().debug(lr_msg)
+                messages.append(lr_msg)
 
-            trace().debug(lr_msg)
             sleep(1)  # log write does not block on write so give time for record to flush before reading it back
 
             # Check there is one logging entries.
             res = ESUtil.run_count(es=self._es_connection,
                                    idx_name=handler_index_name,
                                    json_query={"match_all": {}})
-            self.assertTrue(res == 1)
+            self.assertTrue(res == num_tests)
 
             # check the message matches
             res = ESUtil.run_search(es=self._es_connection,
                                     idx_name=handler_index_name,
                                     json_query={"match_all": {}})
-            actual = res[0]["_source"]
-            self.assertTrue(actual[ElasticFormatter.json_log_fields[3]] == lr_msg)
-
+            for r, expected_msg in zip(res, messages):
+                actual_msg = r['_source']['message']
+                self.assertTrue(actual_msg == expected_msg)
         except Exception as e:
             self.fail(f'Unexpected exception {str(e)}')
-        finally:
-            if ESUtil.index_exists(es=self._es_connection,
-                                   idx_name=handler_index_name):
-                res = ESUtil.delete_index(es=self._es_connection,
-                                          idx_name=handler_index_name)
-                if not res:
-                    raise Exception(f'failed to delete index {handler_index_name} while testing elastic logging')
 
         return
 
     @UtilsForTesting.test_case
     def testA9FullBootStrap(self):
         try:
-            test_cases = [[None, None], [Trace(log_level=LogLevel.debug), '..\\resources']]
+            test_cases = [[None, None, 1], [Trace(log_level=LogLevel.debug), '..\\resources', 2]]
+            index_name: str = f'trace_index_{UniqueRef().ref}'
 
-            for trace, index_def in test_cases:
+            for trace, index_def, expected_hits in test_cases:
                 ebs = ElasticTraceBootStrap(trace=trace,
                                             hostname='localhost',
                                             port_id=None,
                                             elastic_user='elastic',
                                             elastic_password='changeme',
                                             index_definition=index_def,
-                                            index_name=f'trace_index_{UniqueRef().ref}')
+                                            index_name=index_name)
 
                 sleep(1)
                 self.assertTrue(ESUtil.index_exists(es=ebs.elastic_connection, idx_name=ebs.index_name))
-                self._index_to_delete.append(ebs.index_name)
 
                 trace = ebs.trace if trace is None else trace
                 trace().debug(f'{Gibberish.more_gibber()}')
@@ -349,26 +396,129 @@ class TestElasticTrace(unittest.TestCase):
                 res = ESUtil.run_count(es=ebs.elastic_connection,
                                        idx_name=ebs.index_name,
                                        json_query={"match_all": {}})
-                self.assertTrue(res == 1)
-
-                res = ESUtil.delete_index(es=ebs.elastic_connection, idx_name=ebs.index_name)
-                if not res:
-                    raise Exception(f'failed to delete index {ebs.index_name} while testing elastic logging')
+                self.assertTrue(res == expected_hits)
 
         except Exception as e:
             raise Exception(f'Unexpected exception {str(e)}')
+
         return
 
     @UtilsForTesting.test_case
-    def testZ9CleanUp(self):
-        # Clean up, delete the test index.
-        for index_name in self._index_to_delete:
-            if ESUtil.index_exists(es=self._es_connection,
-                                   idx_name=index_name):
-                res = ESUtil.delete_index(es=self._es_connection,
-                                          idx_name=index_name)
-                self.assertTrue(True, res)
-                self.assertFalse(ESUtil.index_exists(es=self._es_connection, idx_name=index_name))
+    def testB1MultiTraceConstruct(self):
+        """
+        Confirm that no matter how many times Trace is constructed that only one set of handlers is added to
+        root logger.
+        """
+        traces = []
+        for _ in range(100):
+            traces.append(Trace(log_level=LogLevel.debug, log_dir_name=".", log_file_name="trace.log"))
+
+        # Verify that every Trace has same handlers, which means handlers only created and added once.
+        first_trace = traces.pop()
+        lgr: logging.Logger = first_trace.__getattribute__('_logger')
+        self.assertTrue(len(lgr.handlers) == 2)  # Should be 2 handlers, console + file
+        first_console_handler: logging.Handler = None
+        first_file_handler: logging.Handler = None
+        for handler in lgr.handlers:
+            if handler.name == first_trace.trace_file_handler_unique_name:
+                first_file_handler = handler
+            if handler.name == first_trace.trace_console_handler_unique_name:
+                first_console_handler = handler
+        self.assertTrue(first_console_handler is not None)
+        self.assertTrue(first_file_handler is not None)
+
+        # now verify all created traces are the same as the first, where the logger associated with each is
+        # same object so 'is' rather than '=='
+        for trace in traces:
+            lgr_actual = trace.__getattribute__('_logger')
+            self.assertTrue(lgr_actual is lgr)
+        return
+
+    @UtilsForTesting.test_case
+    def testB2MultiTraceElasticConstruct(self):
+        """
+        Confirm that no matter how many times ElasticTrace is constructed that only one set of handlers is added to
+        root logger.
+        """
+        traces = []
+        index_name: str = f'trace_index_{UniqueRef().ref}'
+        for _ in range(100):
+            ebs = ElasticTraceBootStrap(trace=None,
+                                        hostname='localhost',
+                                        port_id=None,
+                                        elastic_user='elastic',
+                                        elastic_password='changeme',
+                                        index_definition='..\\resources',
+                                        index_name=index_name,
+                                        log_dir_name='.',
+                                        log_file_name="trace.log")
+            traces.append(ebs.trace)
+
+        # Verify that every Trace has same handlers, which means handlers only created and added once.
+        first_elastic_trace = traces.pop()
+        lgr: logging.Logger = first_elastic_trace.__getattribute__('_logger')
+        self.assertTrue(len(lgr.handlers) == 3)  # Should be 2 handlers, console + file + elastic
+        first_console_handler: logging.Handler = None
+        first_file_handler: logging.Handler = None
+        first_elastic_handler: logging.Handler = None
+        for handler in lgr.handlers:
+            if handler.name == first_elastic_trace.trace_file_handler_unique_name:
+                first_file_handler = handler
+            if handler.name == first_elastic_trace.trace_console_handler_unique_name:
+                first_console_handler = handler
+            if handler.name == ElasticHandler.elastic_handler_unique_name():
+                first_elastic_handler = handler
+        self.assertTrue(first_console_handler is not None)
+        self.assertTrue(first_file_handler is not None)
+        self.assertTrue(first_elastic_handler is not None)
+
+        # now verify all created traces are the same as the first, where the logger associated with each is
+        # same object so 'is' rather than '=='
+        for trace in traces:
+            lgr_actual = trace.__getattribute__('_logger')
+            self.assertTrue(lgr_actual is lgr)
+        return
+
+    class TestLogger:
+        def __init__(self,
+                     index_name: str):
+            # self._trace = ElasticTraceBootStrap(log_level=LogLevel.debug,
+            #                                    session_uuid=UniqueRef().ref,
+            #                                    index_name=index_name).trace
+            self._id = UniqueRef().ref
+            return
+
+        @property
+        def id(self) -> str:
+            return self._id
+
+        def run(self,
+                msg: str = ''):
+            # self._trace().debug(f'{msg}-{self._id}')
+            print(f'{msg}-{self._id}')
+            return self
+
+    @staticmethod
+    def hi():
+        print('Hello 123')
+        return
+
+    @staticmethod
+    def task():
+        print('This is another process', flush=True)
+
+    # @UtilsForTesting.test_case
+    def B2ProcessPoolExecutor(self):
+        # define a task to run in a new process
+        p = Process(target=self.task)
+        # start the task in a new process
+        p.start()
+        # wait for the task to complete
+        p.join()
+        print('Done')
+        # End process
+        p.close()
+        p.kill()
         return
 
 
