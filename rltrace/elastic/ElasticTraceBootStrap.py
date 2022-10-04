@@ -1,4 +1,5 @@
 import json
+import logging
 import os
 from rltrace.Trace import Trace, LogLevel
 from elastic.ESUtil import ESUtil
@@ -62,7 +63,8 @@ class ElasticTraceBootStrap:
             current_elastic_handler: ElasticHandler = self._trace.get_handler_by_name(  # NOQA
                 ElasticHandler.elastic_handler_unique_name())  # NOQA
             if current_elastic_handler.index_name != self._index_name:
-                raise ValueError(f'Cannot enable another elastic handler on different index {self._index_name}')
+                raise ValueError(
+                    f'Using Elastic index [{current_elastic_handler.index_name}] cannot switch to [{self._index_name}]')
 
         return
 

@@ -39,7 +39,7 @@ class UtilsForTesting:
         return annotated_test_case
 
     @staticmethod
-    def _delete_all_test_indexes(es_connection):
+    def delete_all_test_indexes(es_connection):
         # Find any residual indices from failed test clean-ups
         try:
             for candidate in es_connection.cat.indices().body.split():
@@ -55,7 +55,7 @@ class UtilsForTesting:
         return
 
     @staticmethod
-    def _clean_up_test_files():
+    def clean_up_test_files():
         dirs_to_clean = [[".", r'.*\.log']]
         for dir_to_clean, pattern in dirs_to_clean:
             files_to_delete = [os.path.join(dir_to_clean, f) for f in os.listdir(dir_to_clean) if re.match(pattern, f)]

@@ -65,7 +65,7 @@ class TestElasticTrace(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._run = 0
         print(f'- - - - - - S T A R T - - - - - -')
-        UtilsForTesting._clean_up_test_files()
+        UtilsForTesting.clean_up_test_files()
         try:
             # Get the elastic hostport id.
             port_id = None
@@ -96,8 +96,8 @@ class TestElasticTrace(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         print(f'- - - - - - E N D - - - - - - \n')
-        UtilsForTesting._clean_up_test_files()
-        UtilsForTesting._delete_all_test_indexes(es_connection=cls._es_connection)
+        UtilsForTesting.clean_up_test_files()
+        UtilsForTesting.delete_all_test_indexes(es_connection=cls._es_connection)
         return
 
     def tearDown(self) -> None:
