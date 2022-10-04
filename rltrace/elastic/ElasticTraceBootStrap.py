@@ -25,7 +25,7 @@ class ElasticTraceBootStrap:
         """
         Create an elastic handler connected to the given elastic DB and associated it with the given trace object.
 
-        If an index of teh given name does not exist, then create it from the given index definition.
+        If an index of the given name does not exist, then create it from the given index definition
 
         :param trace: The trace object to have the elastic handler attached
         :param hostname: The hostname where the elastic server is running

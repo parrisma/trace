@@ -32,7 +32,7 @@ from LogLevel import LogLevel
 class Trace:
     _TRACE_UNIQUE_NAME = 'Trace-73702c6afbb74892a5393278bd088bb4'
     # %f - milliseconds not supported on Windows for 'time' module
-    _CONSOLE_FORMATTER = logging.Formatter("%(asctime)s - %(name)s - %(levelname)s - %(message)s",
+    _CONSOLE_FORMATTER = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s",
                                            datefmt='%Y-%m-%dT%H:%M:%S.%z')
 
     class StreamToLogger(object):
@@ -71,8 +71,8 @@ class Trace:
         self._elastic_handler = None
         self._console_handler = None
         self._file_handler = None
-        self._log_leve = log_level
-        self._logger = None
+        self._log_level = log_level
+        self._logger: logging.Logger = None
         self._log_dir_name = None
         self._log_file_name = None
         if log_dir_name is not None:
@@ -106,7 +106,12 @@ class Trace:
 
     @property
     def current_log_level(self):
-        return self._log_leve
+        return self._log_level
+
+    def set_log_level(self,
+                      level: int) -> None:
+        self._log_level = level
+        return
 
     def get_handler_by_name(self,
                             handler_name: str) -> logging.Handler:
@@ -240,12 +245,15 @@ class Trace:
             logger.addHandler(self._console_handler)
         return
 
-    def log(self) -> logging.Logger:
+    def log(self, msg: object, level: int = None) -> None:
         """
-        Current logger
-        :return: Session Logger
+        Log the given message
+        :param level: The log level
+        :param msg: The message to log
         """
-        return self._logger
-
-    def __call__(self, *args, **kwargs) -> logging.Logger:
-        return self._logger
+        log_level = self._log_level if level is None else level
+        self._logger.log(log_level,
+                         f'%s - {str(msg)}',
+                         self._session_uuid,
+                         extra={'session_uuid': self._session_uuid})
+        return

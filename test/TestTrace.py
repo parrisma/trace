@@ -21,7 +21,7 @@
 # OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 # SOFTWARE.
 # ----------------------------------------------------------------------------
-
+import logging
 import unittest
 import numpy as np
 from UtilsForTesting import UtilsForTesting
@@ -54,11 +54,15 @@ class TestTrace(unittest.TestCase):
     def testTraceBasicConstructionAndUse(self):
         try:
             trace: Trace = Trace(log_level=LogLevel.debug)
-            trace().info(f'Test Message {np.random.rand()}')
-            trace().debug(f'Test Message {np.random.rand()}')
-            trace().warning(f'Test Message {np.random.rand()}')
-            trace().error(f'Test Message {np.random.rand()}')
-            trace().critical(f'Test Message {np.random.rand()}')
+            trace.log(f'Test Message {np.random.rand()}')
+            trace.log(f'Test Message {np.random.rand()}', level=logging.DEBUG)
+            trace.log(f'Test Message {np.random.rand()}', level=logging.INFO)
+            trace.log(f'Test Message {np.random.rand()}', level=logging.WARNING)
+            trace.log(f'Test Message {np.random.rand()}', level=logging.ERROR)
+            trace.log(f'Test Message {np.random.rand()}', level=logging.CRITICAL)
+            trace.set_log_level(level=logging.WARNING)
+            trace.log(f'Test Message {np.random.rand()}')
+            trace.set_log_level(level=LogLevel.critical)
         except Exception as e:
             self.fail(f'Unexpected exception {str(e)}')
         return

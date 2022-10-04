@@ -31,11 +31,12 @@ class LogLevel(IntEnum):
     """
     Enum to capture the current trace logging level
     """
-    debug = 0
-    info = 1
-    warn = 2
-    error = 3
-    critical = 4
+    debug = logging.DEBUG
+    info = logging.INFO
+    warn = logging.WARN
+    error = logging.ERROR
+    critical = logging.CRITICAL
+    not_set = logging.NOTSET
 
     def set(self,
             logger: logging.Logger):

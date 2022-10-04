@@ -206,7 +206,7 @@ class TestElasticTrace(unittest.TestCase):
         return
 
     @UtilsForTesting.test_case
-    def testA3ZeroCount(self):
+    def testA2ZeroCount(self):
         try:
             res = ESUtil.run_count(es=self._es_connection,
                                    idx_name=self._index_name,
@@ -347,7 +347,7 @@ class TestElasticTrace(unittest.TestCase):
             for _ in range(num_tests):
                 # Create dummy log message
                 lr_msg = Gibberish.more_gibber()
-                trace().debug(lr_msg)
+                trace.log(lr_msg)
                 messages.append(lr_msg)
 
             sleep(1)  # log write does not block on write so give time for record to flush before reading it back
@@ -389,7 +389,7 @@ class TestElasticTrace(unittest.TestCase):
                 self.assertTrue(ESUtil.index_exists(es=ebs.elastic_connection, idx_name=ebs.index_name))
 
                 trace = ebs.trace if trace is None else trace
-                trace().debug(f'{Gibberish.more_gibber()}')
+                trace.log(f'{Gibberish.more_gibber()}')
                 sleep(2)  # log write does not block on write so give time for record to flush before reading it back
 
                 # Check there is one logging entries.
@@ -494,7 +494,7 @@ class TestElasticTrace(unittest.TestCase):
 
         def run(self,
                 msg: str = ''):
-            # self._trace().debug(f'{msg}-{self._id}')
+            # self._trace.log(f'{msg}-{self._id}')
             print(f'{msg}-{self._id}')
             return self
 

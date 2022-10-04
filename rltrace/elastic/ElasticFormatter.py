@@ -22,10 +22,11 @@
 # SOFTWARE.
 # ----------------------------------------------------------------------------
 
+import json
+import re
 from logging import Formatter, LogRecord
 from typing import Dict
 from elastic.ESUtil import ESUtil
-import json
 
 
 class ElasticFormatter(Formatter):
@@ -79,9 +80,9 @@ class ElasticFormatter(Formatter):
         :param record: The logging record to parse
         :return: The log entry as JSON string
         """
-        sess_n = record.name
+        sess_n = getattr(record, 'session_uuid', record.name)
         type_n = self._translate_level_no(record.levelno)
         trace_date = self._date_formatter.format(record.created)
-        message = json.dumps(record.msg)[1:-1]  # ensure special characters are escaped eg ' & "
+        message = re.sub(r'%s - ', '', json.dumps(record.msg)[1:-1])  # ensure special characters are escaped eg ' & "
         json_msg = self._fmt.format(sess_n, type_n, trace_date, message)
         return json_msg
