@@ -65,7 +65,7 @@ class TestElasticTrace(unittest.TestCase):
     def setUpClass(cls) -> None:
         cls._run = 0
         print(f'- - - - - - S T A R T - - - - - -')
-        cls._clean_up_test_files()
+        UtilsForTesting._clean_up_test_files()
         try:
             # Get the elastic hostport id.
             port_id = None
@@ -96,28 +96,12 @@ class TestElasticTrace(unittest.TestCase):
     @classmethod
     def tearDownClass(cls) -> None:
         print(f'- - - - - - E N D - - - - - - \n')
-        cls._clean_up_test_files()
-        cls._delete_all_test_indexes()
+        UtilsForTesting._clean_up_test_files()
+        UtilsForTesting._delete_all_test_indexes(es_connection=cls._es_connection)
         return
 
     def tearDown(self) -> None:
         print(f'- - - - - - C A S E {TestElasticTrace._run} Passed - - - - - -\n')
-        return
-
-    @classmethod
-    def _delete_all_test_indexes(cls):
-        # Find any residual indices from failed test clean-ups
-        try:
-            for candidate in cls._es_connection.cat.indices().body.split():
-                if re.match(r'(trace_index_.*|index_handler_.*|index-.*)', candidate):
-                    if ESUtil.index_exists(es=cls._es_connection,
-                                           idx_name=candidate):
-                        ESUtil.delete_index(es=cls._es_connection,
-                                            idx_name=candidate)
-                        print(f'Cleaned up (deleted) test index {candidate}')
-
-        except Exception as e:
-            print(f'Failed to find list of test indices with error {str(e)}')
         return
 
     @staticmethod
@@ -136,19 +120,6 @@ class TestElasticTrace(unittest.TestCase):
                     handler.release()
                 lgr.removeHandler(handler)
                 print(f'Cleaned up (Removed) logging handler {handler.name}')
-        return
-
-    @staticmethod
-    def _clean_up_test_files():
-        dirs_to_clean = [[".", r'.*\.log']]
-        for dir_to_clean, pattern in dirs_to_clean:
-            files_to_delete = [os.path.join(dir_to_clean, f) for f in os.listdir(dir_to_clean) if re.match(pattern, f)]
-            for file_to_delete in files_to_delete:
-                print(f'- - - - - - deleting test file {files_to_delete}')
-                try:
-                    os.remove(file_to_delete)
-                except Exception as e:
-                    print(f'- - - - - - Warning - failed to delete {files_to_delete} with error {str(e)}')
         return
 
     @staticmethod
