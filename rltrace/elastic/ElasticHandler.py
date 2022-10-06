@@ -26,22 +26,25 @@ from logging import Handler, LogRecord
 from elasticsearch import Elasticsearch
 from elastic.ESUtil import ESUtil
 from elastic.ElasticFormatter import ElasticFormatter
+from rltrace.interface.MultiProcessHandler import MultiProcessHandler
+from rltrace.interface.ElasticConnectionFactory import ElasticConnectionFactory
 
 
-class ElasticHandler(Handler):
+class ElasticHandler(MultiProcessHandler):
     _ELASTIC_HANDLER_UNIQUE_NAME: str = 'Trace-73702c6afbb74892a5393278bd088bb4-ElasticDBHandler'
     _es: Elasticsearch
 
     def __init__(self,
-                 es: Elasticsearch,
+                 elastic_connection_factory: ElasticConnectionFactory,
                  trace_log_index_name: str):
         """
-        Connect to given Elastic instance.
-        :param es: An elastic search connection object
+        Connect to given Elastic instance
+        :param elastic_connection_factory: A connection factory that can create new elastic connections.
         :param trace_log_index_name: The name of the elastic index to write logs to
         """
         Handler.__init__(self)
-        self._es = es
+        self._elastic_connection_factory = elastic_connection_factory
+        self._es = self._elastic_connection_factory.new_connection()
         self._es_index = trace_log_index_name
         self.set_name(self.elastic_handler_unique_name())
         self.setFormatter(ElasticFormatter())
@@ -68,4 +71,11 @@ class ElasticHandler(Handler):
                                       document_as_json_map=msg)
         except Exception as e:
             raise RuntimeError("Failed to write log to Elastic with exception [{}]".format(str(e)))
+        return
+
+    def reset_for_new_process(self) -> None:
+        """
+        Make any required changes to account for the fact that the Handler may have been forked into a new process
+        """
+        self._es = self._elastic_connection_factory.new_connection()
         return

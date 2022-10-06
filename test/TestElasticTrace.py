@@ -32,10 +32,12 @@ from datetime import datetime
 from logging import LogRecord
 from Trace import Trace
 from Trace import LogLevel
+from elasticsearch import Elasticsearch
 from elastic.ElasticFormatter import ElasticFormatter
 from elastic.ElasticHandler import ElasticHandler
 from elastic.ElasticTraceBootStrap import ElasticTraceBootStrap
 from elastic.ElasticResources import ElasticResources
+from elastic.TraceElasticConnectionFactory import TraceElasticConnectionFactory
 from UtilsForTesting import UtilsForTesting
 from rltrace.UniqueRef import UniqueRef
 from elastic.ESUtil import ESUtil
@@ -50,7 +52,8 @@ unittest.TestLoader.sortTestMethodsUsing = lambda self, a, b: (a > b) - (a < b)
 
 class TestElasticTrace(unittest.TestCase):
     _run: int
-    _es_connection = None
+    _es_connection: Elasticsearch = None
+    _es_connection_factory: TraceElasticConnectionFactory = None
     _node_port: int = None
     _loaded: bool = False
     _index_name: str = f'index-{UniqueRef().ref}'
@@ -78,11 +81,12 @@ class TestElasticTrace(unittest.TestCase):
             f.close()
 
             # Open connection to elastic
+            cls._es_connection_factory = TraceElasticConnectionFactory(hostname='localhost',
+                                                                       port_id=str(port_id),
+                                                                       elastic_user='elastic',
+                                                                       elastic_password='changeme')
             if cls._es_connection is None:
-                cls._es_connection = ESUtil.get_connection(hostname='localhost',
-                                                           port_id=str(port_id),
-                                                           elastic_user='elastic',
-                                                           elastic_password='changeme')
+                cls._es_connection = cls._es_connection_factory.new_connection()
         except Exception as e:
             print(f'Unexpected exception {str(e)}')
         return
@@ -270,7 +274,7 @@ class TestElasticTrace(unittest.TestCase):
             if not res:
                 raise Exception(f'failed to create index {handler_index_name} for testing elastic logging')
 
-            elastic_handler = ElasticHandler(es=self._es_connection,
+            elastic_handler = ElasticHandler(elastic_connection_factory=self._es_connection_factory,
                                              trace_log_index_name=handler_index_name)
 
             log_record, lr_name, lr_level, lr_time, lr_msg = self._create_log_record()
@@ -302,7 +306,7 @@ class TestElasticTrace(unittest.TestCase):
             if not res:
                 raise Exception(f'failed to create index {handler_index_name} for testing elastic logging')
 
-            elastic_handler = ElasticHandler(es=self._es_connection,
+            elastic_handler = ElasticHandler(elastic_connection_factory=self._es_connection_factory,
                                              trace_log_index_name=handler_index_name)
 
             # Create trace logger and attach elastic handler.
@@ -453,9 +457,9 @@ class TestElasticTrace(unittest.TestCase):
     class TestLogger:
         def __init__(self,
                      index_name: str):
-            # self._trace = ElasticTraceBootStrap(log_level=LogLevel.debug,
-            #                                    session_uuid=UniqueRef().ref,
-            #                                    index_name=index_name).trace
+            self._trace = ElasticTraceBootStrap(log_level=LogLevel.debug,
+                                                session_uuid=UniqueRef().ref,
+                                                index_name=index_name).trace
             self._id = UniqueRef().ref
             return
 
@@ -476,10 +480,11 @@ class TestElasticTrace(unittest.TestCase):
 
     @staticmethod
     def task():
-        print('This is another process', flush=True)
+        print(f'This is another process with PID {os.getpid()}', flush=True)
 
     # @UtilsForTesting.test_case
-    def B2ProcessPoolExecutor(self):
+    def B3ProcessPoolExecutor(self):
+        print(f'Parent process PID {os.getpid()}')
         # define a task to run in a new process
         p = Process(target=self.task)
         # start the task in a new process
@@ -489,7 +494,6 @@ class TestElasticTrace(unittest.TestCase):
         print('Done')
         # End process
         p.close()
-        p.kill()
         return
 
 

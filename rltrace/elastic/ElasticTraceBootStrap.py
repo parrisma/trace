@@ -1,10 +1,10 @@
 import json
-import logging
 import os
 from rltrace.Trace import Trace, LogLevel
 from elastic.ESUtil import ESUtil
 from elastic.ElasticHandler import ElasticHandler
 from elastic.ElasticResources import ElasticResources
+from elastic.TraceElasticConnectionFactory import TraceElasticConnectionFactory
 
 
 class ElasticTraceBootStrap:
@@ -47,8 +47,9 @@ class ElasticTraceBootStrap:
         self._port_id: int = port_id
         self._elastic_user: str = elastic_user
         self._elastic_password: str = elastic_password
+        self._elastic_connection_factory = None
         self._index_name: str = index_name
-        self._index_definition: str = index_definition  # Lazy evaluate, only check if file if index does not exist
+        self._index_definition: str = index_definition  # Lazy evaluate
         self._kubernetes_namespace: str = kubernetes_namespace
         self._initial_log_level = initial_log_level
 
@@ -142,12 +143,14 @@ class ElasticTraceBootStrap:
         Try to connect to elastic with the given details and credentials.
         """
         try:
+            if self._elastic_connection_factory is None:
+                self._elastic_connection_factory = TraceElasticConnectionFactory(hostname=self._hostname,
+                                                                                 port_id=str(self._port_id),
+                                                                                 elastic_user=self._elastic_user,
+                                                                                 elastic_password=self._elastic_password)
             # Open connection to elastic
             if self._es_connection is None:
-                self._es_connection = ESUtil.get_connection(hostname=self._hostname,
-                                                            port_id=str(self._port_id),
-                                                            elastic_user=self._elastic_user,
-                                                            elastic_password=self._elastic_password)
+                self._es_connection = self._elastic_connection_factory.new_connection()
         except Exception as e:
             raise RuntimeError(f'Failed to connect to Elastic DB with errorL {str(e)}')
 
@@ -174,7 +177,7 @@ class ElasticTraceBootStrap:
         Create an elastic handler and bind to the trace object
         """
         try:
-            elastic_handler = ElasticHandler(es=self._es_connection,
+            elastic_handler = ElasticHandler(elastic_connection_factory=self._elastic_connection_factory,
                                              trace_log_index_name=self._index_name)
             # Create trace logger and attach elastic handler.
             self._trace.enable_handler(elastic_handler)

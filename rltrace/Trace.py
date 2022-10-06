@@ -22,6 +22,7 @@
 # SOFTWARE.
 # ----------------------------------------------------------------------------
 
+import os
 import logging
 import sys
 import os.path
@@ -34,6 +35,7 @@ class Trace:
     # %f - milliseconds not supported on Windows for 'time' module
     _CONSOLE_FORMATTER = logging.Formatter("%(asctime)s - %(levelname)s - %(message)s",
                                            datefmt='%Y-%m-%dT%H:%M:%S.%z')
+    _pid = os.getpid()  # Used to detect multi-process mode.
 
     class StreamToLogger(object):
         """
@@ -130,7 +132,6 @@ class Trace:
                    log_level: LogLevel) -> None:
         """
         Create a logger and enable the default console logger
-        :param session_uuid: The session uuid to use as the name of the logger
         """
 
         # Is Trace already enabled via another call in this session
