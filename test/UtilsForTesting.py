@@ -43,7 +43,7 @@ class UtilsForTesting:
         # Find any residual indices from failed test clean-ups
         try:
             for candidate in es_connection.cat.indices().body.split():
-                if re.match(r'(trace_index_.*|index_handler_.*|index-.*)', candidate):
+                if re.match(r'(trace_index_.*|index_handler_.*|index-.*|multi_process_index_.*)', candidate):
                     if ESUtil.index_exists(es=es_connection,
                                            idx_name=candidate):
                         ESUtil.delete_index(es=es_connection,

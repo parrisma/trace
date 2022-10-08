@@ -1,5 +1,6 @@
 import json
 import os
+from typing import Dict, Any
 from rltrace.Trace import Trace, LogLevel
 from elastic.ESUtil import ESUtil
 from elastic.ElasticHandler import ElasticHandler
@@ -68,6 +69,18 @@ class ElasticTraceBootStrap:
                     f'Using Elastic index [{current_elastic_handler.index_name}] cannot switch to [{self._index_name}]')
 
         return
+
+    def init_kwargs_to_clone(self) -> Dict[str, Any]:
+        """
+        Return the kwargs to pass to __init__ to clone the current Elastic Trace
+        """
+        return {
+            "trace": None,
+            "hostname": self._hostname,
+            "elastic_user": self._elastic_user,
+            "elastic_password": self._elastic_password,
+            "index_name": self._index_name
+        }
 
     def _get_index_definition_as_json(self,
                                       dir_or_full_path_and_filename: str):

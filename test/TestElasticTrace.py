@@ -22,10 +22,12 @@
 # SOFTWARE.
 # ----------------------------------------------------------------------------
 import os
+import time
 import unittest
 import json
 import logging
 import re
+import numpy as np
 from time import sleep
 from typing import Dict, Any, Tuple, List
 from datetime import datetime
@@ -474,26 +476,54 @@ class TestElasticTrace(unittest.TestCase):
             return self
 
     @staticmethod
-    def hi():
-        print('Hello 123')
+    def task(ebs_kwargs: Dict, num_logs: int):
+        trace: Trace = ElasticTraceBootStrap(**ebs_kwargs).trace
+        for n in range(num_logs):
+            trace.log(f'Child PID {os.getpid()} -  {n}')
+            time.sleep(np.random.randint(50, 1000) / 1000)
         return
 
-    @staticmethod
-    def task():
-        print(f'This is another process with PID {os.getpid()}', flush=True)
+    @UtilsForTesting.test_case
+    def testB3MultiProcess(self):
+        index_name: str = f'multi_process_index_{UniqueRef().ref}'
+        ebs = ElasticTraceBootStrap(trace=None,
+                                    hostname='localhost',
+                                    port_id=None,
+                                    elastic_user='elastic',
+                                    elastic_password='changeme',
+                                    index_definition='..\\resources',
+                                    index_name=index_name)
 
-    # @UtilsForTesting.test_case
-    def B3ProcessPoolExecutor(self):
-        print(f'Parent process PID {os.getpid()}')
+        trace: Trace = ebs.trace
+        trace.log(f'Multi Process Test Start')
         # define a task to run in a new process
-        p = Process(target=self.task)
-        # start the task in a new process
-        p.start()
+        expected = list()
+        for _ in range(10):
+            num_msg = np.random.randint(10)
+            p = Process(target=self.task, args=(ebs.init_kwargs_to_clone(), num_msg,))
+            p.start()
+            expected.append([p, p.pid, num_msg])
+
+        parent_num_msg = 10
+        for n in range(parent_num_msg):
+            trace.log(f'Parent PID {os.getpid()} -  {n}')
+            time.sleep(np.random.randint(50, 1000) / 1000)
         # wait for the task to complete
-        p.join()
-        print('Done')
-        # End process
-        p.close()
+        for p, pid, expected_num_msg in expected:
+            p.join()
+            time.sleep(1)
+            actual_num_msg = ESUtil.run_count(es=ebs.elastic_connection,
+                                              idx_name=index_name,
+                                              json_query={"regexp": {"message": f'.*{pid}.*'}})
+            print(f'{pid} {actual_num_msg} {expected_num_msg}')
+            self.assertTrue(expected_num_msg == actual_num_msg)
+            p.close()
+
+        actual_parent_num_msg = ESUtil.run_count(es=ebs.elastic_connection,
+                                                 idx_name=index_name,
+                                                 json_query={"regexp": {"message": f'.*{os.getpid()}.*'}})
+        self.assertTrue(parent_num_msg, actual_parent_num_msg)
+        trace.log(f'Multi Process Test End')
         return
 
 
