@@ -8,7 +8,7 @@ metadata:
 spec:
   storageClassName: elastic-data
   capacity:
-    storage: 10Gi
+    storage: 200Gi
   accessModes:
     - ReadWriteOnce
   hostPath:
